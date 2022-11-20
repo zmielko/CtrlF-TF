@@ -1,0 +1,2 @@
+[console_scripts]
+ctrlf = ctrlf_tf.cli_prgm:main

@@ -1,0 +1,40 @@
+.. ctrlf_tf documentation master file, created by
+   sphinx-quickstart on Sun Sep 19 16:32:55 2021.
+   You can adapt this file completely to your liking, but it should at least
+   contain the root `toctree` directive.
+
+Welcome to CtrlF-TF's documentation!
+=====================================
+
+CtrlF-TF is a package that calls transcription factor (TF) binding sites in DNA sequences. It takes k-mer TF binding data and compiles it into ranked sequences containing sites that can then be searched for in a DNA sequence.
+
+.. note::
+
+   CtrlF-TF is currently under active development and will be released as
+   a 1.0 version after peer review. Please send bug reports, requests,
+   and suggestions to: zachery.mielko@duke.edu
+
+Installation
+------------
+
+CtrlF-TF can currently be installed from pypi with the following command:
+
+.. code-block:: bash
+
+   pip install CtrlF-TF
+
+This will install the package and the following required dependencies:
+
+- pandas
+- numpy
+- scipy
+- pyahocorasick
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Contents:
+
+   overview
+   optimization
+   command_line_program
+   library_api
