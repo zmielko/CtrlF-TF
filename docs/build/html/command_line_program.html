@@ -1,0 +1,229 @@
+
+<!DOCTYPE html>
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+
+    <title>Command Line Interface &#8212; CtrlF-TF 1.0b1 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css" />
+    <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+    <script src="_static/jquery.js"></script>
+    <script src="_static/underscore.js"></script>
+    <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
+    <script src="_static/doctools.js"></script>
+    <script src="_static/sphinx_highlight.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Library API" href="library_api.html" />
+    <link rel="prev" title="Optimization" href="optimization.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="command-line-interface">
+<span id="cli"></span><h1>Command Line Interface<a class="headerlink" href="#command-line-interface" title="Permalink to this heading">¶</a></h1>
+<p>CtrlF-TF comes with a command line program, <cite>ctrlf</cite>, which comes with
+three subprograms:</p>
+<ol class="arabic simple">
+<li><p><cite>ctrlf compile</cite>: Aligns k-mers and compiles them into searchable sites.</p></li>
+<li><p><cite>ctrlf sitecall</cite>: Calls binding sites from FASTA files using the output of <cite>ctrlf compile</cite>.</p></li>
+<li><p><cite>ctrlf classify</cite>: Classifies a table of values and sequences for use in optimization. Used only when the <cite>-optimize</cite> argument is given in <cite>ctrlf compile</cite>.</p></li>
+</ol>
+<p>Using <cite>ctrlf -v</cite> will return the version number.</p>
+<p>A typical workflow would be to generate searchable sites once with <cite>ctrlf compile</cite> and then use <cite>ctrlf sitecall</cite> to call sites as needed.</p>
+<section id="calling-tf-binding-sites-ctrlf-sitecall">
+<h2>Calling TF binding sites: ctrlf sitecall<a class="headerlink" href="#calling-tf-binding-sites-ctrlf-sitecall" title="Permalink to this heading">¶</a></h2>
+<p>The <cite>ctrlf sitecall</cite> program uses the following arguments:</p>
+<ol class="arabic simple">
+<li><p>–consensus_sites, -c: Output file from <cite>ctrlf compile</cite></p></li>
+<li><p>–fasta_file, -f: File of DNA sequences to call sites</p></li>
+<li><p>–output, -o: Output file location, stdout by default. Output is in BED format.</p></li>
+<li><p>–genomic_coordiantes, -gc: Parses the fasta input for genomic coordinates to use in the BED output.</p></li>
+</ol>
+<p>Below is an example of the syntax:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Long form</span>
+ctrlf sitecall --consensus_sites ctrlf_compile_output.txt --fasta_file genomic_sequences.fasta --genomic_coordinates --output binding_sites.bed
+<span class="c1"># Short form</span>
+ctrlf sitecall -c ctrlf_compile_output.txt -f genomic_sequences.fasta -gc -o binding_sites.bed
+</pre></div>
+</div>
+</section>
+<section id="creating-searchable-sites-ctrlf-compile">
+<h2>Creating searchable sites: ctrlf compile<a class="headerlink" href="#creating-searchable-sites-ctrlf-compile" title="Permalink to this heading">¶</a></h2>
+<p>Conceptually, you will need to:</p>
+<ol class="arabic simple">
+<li><p>Have a PWM model and know a minimal subset of it that constitutes a core region.</p></li>
+<li><p>Know if the TF binding is palindromic.</p></li>
+</ol>
+<p>For optimization of the compilation parameters, you will also need to have a table with values, sequences, and a classification of +/./- which can be generated with the <cite>ctrlf classify</cite> program. The syntax for <cite>ctrlf classify</cite> follows the syntax for AlignParameters in the python library.</p>
+<p>To use ctrlf compile, you will need the following arguments for <strong>data_files</strong>:</p>
+<ol class="arabic simple">
+<li><p>–align_model, -a: A PWM model to align k-mers to</p></li>
+<li><p>–kmer_file, -k: A tabular files of k-mers</p></li>
+</ol>
+<p>The PWM file is used to align the k-mers and its width provides the definition of a
+core binding site. The PWM file format is tabular by default but can be specified as a MEME format with the <cite>-m</cite> argument. The default core definition is the entire PWM as given, but several optional
+parameters are available to indicate a subset of the PWM is the core region.</p>
+<p>Manual definiton:</p>
+<ol class="arabic simple">
+<li><p>–range, -r: 1-based inclusive range of the binding site core.</p></li>
+<li><p>–core_gap, -cg: Positions within the core range that are not part of the core definition</p></li>
+</ol>
+<p>Automatic definition (recommended):</p>
+<ol class="arabic simple">
+<li><p>–range_consensus, -rc: A consensus site of the core with ‘.’ characters representing core gaps.</p></li>
+</ol>
+<p>For example, given a –range-consensus of TTCC.GGAA will align the sequence to the PWM, use that
+subset at the core definition, and have the 5th position as a core gap.</p>
+<p>Helper arguments also exist for working with the k-mer data:</p>
+<ol class="arabic simple">
+<li><p>–threshold, -t: A threshold value for the k-mers.</p></li>
+<li><p>–threshold_column, -tc: A column in the k-mer file to use values from.</p></li>
+<li><p>–gap_limit, -g: The number of gaps allowed in k-mers.</p></li>
+</ol>
+<p>The <cite>–palindrome</cite> argument is also required if the TF binding is palindromic (ie. STAT3 or a bHLH).</p>
+<p>Output is to stdout by default, but can be specified to save to a file location with the <cite>–output</cite> argument.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Long form</span>
+ctrlf compile --align_model pwm_file.txt --kmer_file kmer_file.txt --range-consensus TTCC.GGAA --palindrome --output searchable_sites.txt
+<span class="c1"># Short form</span>
+ctrlf compile -a pwm_file.txt -k kmer_file.txt -rc TTCC.GGAA -p -o searchable_sites.txt
+</pre></div>
+</div>
+<p>One can also run an optimization step, which uses the output from <cite>ctrlf classify</cite> to optimize for the core definition, gap limit, and threshold. To do this, the <cite>–optimize</cite> argument needs to be given and if so the following argument is required:</p>
+<ol class="arabic simple">
+<li><p>–classify_file, -c: output file from <cite>ctrlf classify</cite></p></li>
+</ol>
+<p>Some optional parameters only relating to optimization include:</p>
+<ol class="arabic simple">
+<li><p>–fpr_threshold, -fpr: A fpr threshold to benchmark performance on (default = 0.01)</p></li>
+<li><p>–gap_thresholds, -gthr: k-mer score thresholds for optimizing gaps</p></li>
+<li><p>–output-report, -orep: Output file location for a report on the optimization (default is no report)</p></li>
+</ol>
+<p>These arguments correpsond to the ones in the Optimize class in the python library. Here is an example of the syntax from before but with optimization:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Long form</span>
+ctrlf compile --align_model pwm_file.txt --kmer_file kmer_file.txt --range-consensus TTCC.GGAA --palindrome -output searchable_sites.txt --optimize --classify_file ctrlf_classify_output.txt
+<span class="c1"># Short form</span>
+ctrlf compile -a pwm_file.txt -k kmer_file.txt -rc TTCC.GGAA -p -o searchable_sites.txt -opt -c ctrlf_classify_output.txt
+</pre></div>
+</div>
+</section>
+<section id="classification-of-sequences-for-optimization-ctrlf-classify">
+<h2>Classification of sequences for optimization: ctrlf classify<a class="headerlink" href="#classification-of-sequences-for-optimization-ctrlf-classify" title="Permalink to this heading">¶</a></h2>
+<p>The optimization step involves benchmarking a classification task of sequences
+with binding sites and those without. The <cite>ctrlf classify</cite> program offers a
+convienence feature of taking tables with TF binding measurements and sequences
+and returning a table in the format used by <cite>ctrlf compile</cite>.</p>
+<p>The only required argument is the input file:</p>
+<ol class="arabic simple">
+<li><p>–input_file, -i: Input tabular file with measurements in the fist column and sequences in the second</p></li>
+</ol>
+<p>Optional arguments include:</p>
+<ol class="arabic simple">
+<li><p>–output, -o: Output file location, stdout by default.</p></li>
+<li><p>–method, -m: Classification method, kde_z4 or z-score, kde_z4 by default.</p></li>
+<li><p>–z_scores, -z: Z-scores to use if classifying by z-score.</p></li>
+<li><p>–sequence-range, -sr: Sequence subset positions to use (default is the whole sequence).</p></li>
+<li><p>–ln_transform, -ln: Performs a natural log transformation of values prior to classification.</p></li>
+</ol>
+<p>Example syntax would be:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Long form</span>
+ctrlf classify --input_file input_file --output classified_values.txt
+<span class="c1"># Short form</span>
+ctrlf classify -i input_file -o classified_values.txt
+</pre></div>
+</div>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">CtrlF-TF</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="overview.html">Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="optimization.html">Optimization</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Command Line Interface</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#calling-tf-binding-sites-ctrlf-sitecall">Calling TF binding sites: ctrlf sitecall</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#creating-searchable-sites-ctrlf-compile">Creating searchable sites: ctrlf compile</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#classification-of-sequences-for-optimization-ctrlf-classify">Classification of sequences for optimization: ctrlf classify</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="library_api.html">Library API</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="optimization.html" title="previous chapter">Optimization</a></li>
+      <li>Next: <a href="library_api.html" title="next chapter">Library API</a></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2022, Zachery Mielko.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 5.3.0</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      
+      |
+      <a href="_sources/command_line_program.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>
