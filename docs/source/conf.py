@@ -50,14 +50,13 @@ exclude_patterns = []
 # a list of builtin themes.
 #
 html_theme = 'alabaster'
-
+#html_theme = "classic"
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
 show_authors = False
-#html_logo = "_static/tf_kompas_logo.png"
-#html_theme_options = {
-#    "logo": ,
-#    "logo_name":
-#}
+html_theme_options = {
+    "head_font_family": "Arial",
+    "font_family": "Arial"
+}

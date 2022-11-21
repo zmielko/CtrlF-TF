@@ -1,0 +1,443 @@
+
+<!DOCTYPE html>
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+
+    <title>Overview &#8212; CtrlF-TF 1.0b1 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css" />
+    <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+    <script src="_static/jquery.js"></script>
+    <script src="_static/underscore.js"></script>
+    <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
+    <script src="_static/doctools.js"></script>
+    <script src="_static/sphinx_highlight.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Optimization" href="optimization.html" />
+    <link rel="prev" title="Welcome to CtrlF-TF’s documentation!" href="index.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="overview">
+<span id="id1"></span><h1>Overview<a class="headerlink" href="#overview" title="Permalink to this heading">¶</a></h1>
+<p>CtrlF-TF is a transcription factor binding site calling method utilizing
+high-throughput protein-DNA binding data in the form of k-mers. There are
+two major one-time components to the method:</p>
+<ol class="arabic simple">
+<li><p>Aligning k-mers to a PWM describing a core site</p></li>
+<li><p>Compiling the aligned k-mers into searchable sequences</p></li>
+</ol>
+<p>These steps are both performed in the command-line interface program <cite>ctrlf compile</cite>
+and in the library object CtrlF when it is initialized using any of the classmethods:
+<cite>from_parameters</cite>, <cite>from_alignment_file</cite>, or <cite>from_compiled_sites</cite>.</p>
+<p>The final product is a table with compiled sequences that can be searched, with a match
+indicating a binding site.</p>
+<section id="aligning-k-mers-input-files">
+<h2>Aligning k-mers: Input files<a class="headerlink" href="#aligning-k-mers-input-files" title="Permalink to this heading">¶</a></h2>
+<p>The alignment step requires two input data sources:</p>
+<ol class="arabic simple">
+<li><p>A k-mer file, a tabular file with the following columns:</p></li>
+</ol>
+<table class="docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p>k-mer</p></td>
+<td><p>k-mer (Reverse Complement)</p></td>
+<td><p>Score</p></td>
+</tr>
+</tbody>
+</table>
+<ol class="arabic simple" start="2">
+<li><dl class="simple">
+<dt>A PWM with probabilities either of the following formats:</dt><dd><ul class="simple">
+<li><p>Tabular with no header and the first column as the nucleotides.</p></li>
+<li><p>MEME format.</p></li>
+</ul>
+</dd>
+</dl>
+</li>
+</ol>
+<p>Tabular format example:</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Nucleotide</p></th>
+<th class="head"><p>Position 1</p></th>
+<th class="head"><p>Position 2</p></th>
+<th class="head"><p>Position N</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>A:</p></td>
+<td><p>0.25</p></td>
+<td><p>0.25</p></td>
+<td><p>0.25</p></td>
+</tr>
+<tr class="row-odd"><td><p>C:</p></td>
+<td><p>0.25</p></td>
+<td><p>0.25</p></td>
+<td><p>0.25</p></td>
+</tr>
+<tr class="row-even"><td><p>G:</p></td>
+<td><p>0.25</p></td>
+<td><p>0.25</p></td>
+<td><p>0.25</p></td>
+</tr>
+<tr class="row-odd"><td><p>T:</p></td>
+<td><p>0.25</p></td>
+<td><p>0.25</p></td>
+<td><p>0.25</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="alignment-parameters-core-selection">
+<h2>Alignment Parameters: Core Selection<a class="headerlink" href="#alignment-parameters-core-selection" title="Permalink to this heading">¶</a></h2>
+<p>The PWM acts as a prior for what a binding site looks like in a
+general sense. Core selection is the process of selecting the region
+in an input PWM that describes a critically described region. This region
+acts as the definition of a site where aligned k-mers must fully overlap
+the region. Suppose one had an input PWM for a GATA factor similar to the
+following:</p>
+<img alt="_images/GATA_example.png" src="_images/GATA_example.png" />
+<p>If one were to define a core for a GATA factor as “GATA”, then the
+selection of the core would be to chose this region of the PWM.</p>
+<img alt="_images/GATA_example_core_highlight.png" src="_images/GATA_example_core_highlight.png" />
+<p>The highlighted region serves 2 purposes.</p>
+<ol class="arabic simple">
+<li><p>It is a submodel for k-mers to align to</p></li>
+<li><dl class="simple">
+<dt>When calling sites, a site is defined as having overlapping k-mers</dt><dd><p>describe this region in aligned space</p>
+</dd>
+</dl>
+</li>
+</ol>
+<p>Cores can be defined in a number of ways. For the purpose of the associated
+publication, cores are described as regions where hydrogen bonds in protein-DNA
+complexes occur in structural data. PWMs often times will include flanking
+regions to cores and subsections can be selected in a number of ways.
+<strong>By default, the entire PWM model will be counted as the core</strong>, but one can
+select a subsection using any of the following methods:</p>
+<ol class="arabic simple">
+<li><p>Selection by specifying positions</p></li>
+</ol>
+<p>Given positions with 1-base coordinates, one can select a core_start and
+a core_end position. Within the module, this is the parameter in the
+AlignParameter class:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">ctrlf_tf</span><span class="o">.</span><span class="n">AlignParamaters</span><span class="p">(</span><span class="n">core_start</span> <span class="o">=</span> <span class="mi">4</span><span class="p">,</span> <span class="n">core_end</span> <span class="o">=</span> <span class="mi">7</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The command-line application <strong>ctrlf compile</strong> specifies the same
+information using the -r or –range argument, which takes 2 parameters:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ctrlf compile --range <span class="m">4</span> <span class="m">7</span>
+</pre></div>
+</div>
+<ol class="arabic simple" start="2">
+<li><p>Selection by specifying a consensus site</p></li>
+</ol>
+<p>A consensus site input allows one to define a subsection of the model
+without prior processing of the position of the core or the orientation.
+The consensus site is aligned to the PWM in both orientations, with the
+top scoring position determining the core subsection.</p>
+<p>For example, to select the “GATA” subsection one would input the site
+“GATA”. The syntax in the module would be:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">ctrlf_tf</span><span class="o">.</span><span class="n">AlignParameters</span><span class="p">(</span><span class="n">range_consensus</span> <span class="o">=</span> <span class="s2">&quot;GATA&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The syntax in ctrlf compile would be:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ctrlf compile --range-consensus GATA
+</pre></div>
+</div>
+</section>
+<section id="alignment-parameters-cores-with-gaps">
+<h2>Alignment Parameters: Cores With Gaps<a class="headerlink" href="#alignment-parameters-cores-with-gaps" title="Permalink to this heading">¶</a></h2>
+<p>The alignment and site definition does not have to be continuous.
+One can define a site as a range with one or more gaps. During the site
+calling process, the reported range will be a single continuous range,
+but the definition used in alignment and calling a site will adhere to
+the gapped definition. Gapped positions in the model are transformed
+into equiprobable positions during alignment.</p>
+<p>Suppose one has a PWM for a STAT transcription factor with a single
+nucleotide gap in the middle of the TTCCNGGAA consensus and wanted
+to exclude the low information content gap from the alignment model.</p>
+<img alt="_images/STAT_example_core_highlight.png" src="_images/STAT_example_core_highlight.png" />
+<p>Like with specifying core position, this can be done in two ways:</p>
+<ol class="arabic simple">
+<li><p>Input of relative positions to the model to define as gaps.</p></li>
+</ol>
+<p>Given an input of relative 1-based positions to the core start, one
+can define position to skip as gaps in the alignment model. The syntax
+in the module is to give an iterable of positions:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">AlignParameters</span><span class="p">(</span><span class="n">core_gaps</span> <span class="o">=</span> <span class="p">[</span><span class="mi">5</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>In the <strong>ctrlf compile</strong> program, the syntax is:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ctrlf compile --core-gaps <span class="m">5</span>
+</pre></div>
+</div>
+<ol class="arabic simple" start="2">
+<li><p>Using a period character ‘.’ within a consensus site</p></li>
+</ol>
+<p>For a consensus site, a period signifies a gaped position in the
+PWM model. The syntax for the module would be:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">AlignParameters</span><span class="p">(</span><span class="n">range_consensus</span> <span class="o">=</span> <span class="s2">&quot;TTCC.GGAA&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The syntax in the <strong>ctrlf compile</strong> program is:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ctrlf compile --range-consensus TTCC.GGAA
+</pre></div>
+</div>
+</section>
+<section id="alignment-parameters-palindromic-models">
+<h2>Alignment Parameters: Palindromic Models<a class="headerlink" href="#alignment-parameters-palindromic-models" title="Permalink to this heading">¶</a></h2>
+<p>Proteins can bind DNA with either palindromic or non-palindromic motifs.
+When CtrlF-TF aligns k-mers to a model and calls sites, the palindrome flag
+determines how k-mers are align and site orientation is described.</p>
+<p>If the alignment has the palindrome argument set to <cite>False</cite>, each k-mer
+is scored in both orientations. The maximum scored position is
+used as the position of the k-mer to determine which orientation of the
+kmer matches the orientation of the model. When a site is called, it will
+be given a ‘+’ or ‘-’ orientation.</p>
+<p>If the argument is set to <cite>True</cite>, each k-mer is scored in both
+orientations. For each orientation, the maximum scored position is used.
+When a site is called, it will be given a ‘.’ orientation.</p>
+<p>By default, the palindrome parameter is set to <cite>False</cite>, but it can be set to
+<cite>True</cite> in the module with the following sytax:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">ctrlf_tf</span><span class="o">.</span><span class="n">AlignParameters</span><span class="p">(</span><span class="n">palindrome</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>It can be set to <cite>True</cite> in the ctrlf compile program using the <cite>-p</cite>
+argument:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ctrlf compile -p
+</pre></div>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The PWM models used in these examples are not real datasets and only
+created for demonstration purposes.</p>
+</div>
+</section>
+<section id="calling-tf-binding-sites">
+<h2>Calling TF Binding Sites<a class="headerlink" href="#calling-tf-binding-sites" title="Permalink to this heading">¶</a></h2>
+<p>CtrlF-TF uses the <strong>CtrlF</strong> class to align sequences, compile them into
+searchable sites, and search input sequences. Given a set of parameters,
+the one-time tasks are performed automatically and both the aligned
+k-mers and the compiled sequences can be saved for future use.</p>
+<p>Following-up on the STAT3 example from earlier, the following code
+demonstrates initializing a <strong>CtrlF</strong> class from parameters.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">ctrlf_tf</span> <span class="kn">import</span> <span class="n">AlignParameters</span><span class="p">,</span> <span class="n">CtrlF</span>
+<span class="n">parameters</span> <span class="o">=</span> <span class="n">AlignParameters</span><span class="p">(</span><span class="n">pwm_file</span><span class="p">,</span>
+                             <span class="n">kmer_file</span><span class="p">,</span>
+                             <span class="n">range_consensus</span> <span class="o">=</span> <span class="s2">&quot;TTCC.GGAA&quot;</span><span class="p">,</span>
+                             <span class="n">palindrome</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+<span class="c1"># Initialize the CtrlF object</span>
+<span class="n">ctrlf</span> <span class="o">=</span> <span class="n">CtrlF</span><span class="o">.</span><span class="n">from_parameters</span><span class="p">(</span><span class="n">parameters</span><span class="p">)</span>
+<span class="c1"># Save the aligned kmers</span>
+<span class="n">ctrlf</span><span class="o">.</span><span class="n">save_alignment</span><span class="p">(</span><span class="s2">&quot;Alignment_Output.txt&quot;</span><span class="p">)</span>
+<span class="c1"># Save the compiled sequences</span>
+<span class="n">ctrlf</span><span class="o">.</span><span class="n">save_compiled_sites</span><span class="p">(</span><span class="s2">&quot;Compiled_Site_Output.txt&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>One can also load a CtrlF object from saved aligned k-mers or
+compiled sequences. If it is loaded from aligned k-mers, it will
+automatically perform the sequence compilation.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Load from the previous saved aligned k-mers</span>
+<span class="n">ctrlf</span> <span class="o">=</span> <span class="n">CtrlF</span><span class="o">.</span><span class="n">from_alignment_file</span><span class="p">(</span><span class="s2">&quot;Alignment_Output.txt&quot;</span><span class="p">)</span>
+<span class="c1"># Load from the previous saved compiled sequences</span>
+<span class="n">ctrlf</span> <span class="o">=</span> <span class="n">CtrlF</span><span class="o">.</span><span class="n">from_compiled_sites</span><span class="p">(</span><span class="s2">&quot;Compiled_Site_Output.txt&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>After the <strong>CtrlF</strong> object is initialized, it has 3 methods to call sites with:</p>
+<ol class="arabic simple">
+<li><p>CtrlF.call_sites() - Calls binding sites as SiteTuples</p></li>
+<li><p>CtrlF.call_sites_as_bed() - Calls binding sites as BedTuples</p></li>
+</ol>
+<p>The <strong>call_sites</strong> method takes a DNA sequence as input and returns a list
+of SiteTuples. SiteTuples are a NamedTuple with start, end, orientation,
+and threshold labels. The syntax for call_sites is:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">site_tuple_list</span> <span class="o">=</span> <span class="n">CtrlF</span><span class="o">.</span><span class="n">call_sites</span><span class="p">(</span><span class="s2">&quot;CACATGAGCTAGCGATCTAGCTGG&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Having a list of SiteTuples as a return can be used in a couple ways. For
+example, one could write a loop over an iterable of sequences and
+concatinate lists to one large list:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">site_list</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="n">sequence</span> <span class="ow">in</span> <span class="n">sequences</span><span class="p">:</span>
+       <span class="n">site_list</span> <span class="o">+=</span> <span class="n">CtrlF</span><span class="o">.</span><span class="n">call_sites</span><span class="p">(</span><span class="n">sequence</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Lists of SiteTuples can also be converted into a Pandas DataFrame using the
+following syntax:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">site_list</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Which will create a DataFrame with the following format (example values):</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>start</p></th>
+<th class="head"><p>end</p></th>
+<th class="head"><p>orientation</p></th>
+<th class="head"><p>threshold</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>5</p></td>
+<td><p>14</p></td>
+<td><ul class="simple">
+<li></li>
+</ul>
+</td>
+<td><p>0.467</p></td>
+</tr>
+<tr class="row-odd"><td><p>20</p></td>
+<td><p>29</p></td>
+<td><ul class="simple">
+<li></li>
+</ul>
+</td>
+<td><p>0.482</p></td>
+</tr>
+<tr class="row-even"><td><p>…</p></td>
+<td><p>…</p></td>
+<td><p>…</p></td>
+<td><p>…</p></td>
+</tr>
+</tbody>
+</table>
+<p>The <strong>call_sites_as_bed</strong> method takes a DNA sequence, chromosome, and
+chromosome start position as parameters. It returns a list of BedTuples
+which have the labels: chromosome, start, end, name, score, and
+orientation. The syntax for call_sites_as_bed is:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">bed_tuple_list</span> <span class="o">=</span> <span class="n">CtrlF</span><span class="o">.</span><span class="n">call_sites_as_bed</span><span class="p">(</span><span class="s2">&quot;chr1&quot;</span><span class="p">,</span> <span class="mi">10000</span><span class="p">,</span> <span class="s2">&quot;CACGTAGCTATCGATC&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Just like the SiteTuples, BedTuples can be converted to a Pandas
+DataFrame with the following syntax:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">bed_tuple_list</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>This returns a DataFrame in Bed6 format. For CtrlF output, each column is</p>
+<ol class="arabic simple">
+<li><p>chromosome: name of the chromosome</p></li>
+<li><p>start: start position (0-based)</p></li>
+<li><p>end: end position (1-based)</p></li>
+<li><p>name: format {original_chromosome}:{sequence_start}-{sequence_end}_{site_number}</p></li>
+<li><p>score: threshold value</p></li>
+<li><p>orientation: +, -, or . indicating the orientation of the site</p></li>
+</ol>
+<p>In addition to calling sites from input strins, CtrlF also has a method
+to call sites from a given fasta file path, <strong>call_sites_from_fasta</strong>.
+This method acts as a wrapper to read sequences in a fasta format and
+return sites in a bed format. If the fasta headers are in the format:
+{chromosome}:{start}-{end} then the genomic_label argument set to True
+will parse the header for the correct chromosome and start information.
+Otherwise, the entire header is placed in the chromosome label and the
+start and end are relative to the sequence position.</p>
+<p>Fasta files can be parsed with the following syntax:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">CtrlF</span><span class="o">.</span><span class="n">call_sites_from_fasta</span><span class="p">(</span><span class="n">fasta_file</span><span class="p">,</span> <span class="n">genomic_label</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Which returns a pandas dataframe in Bed6 format. If the <cite>to_file</cite>
+parameter is specified, the output is written to a file instead of
+being stored in a dataframe.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">CtrlF</span><span class="o">.</span><span class="n">call_sites_from_fasta</span><span class="p">(</span><span class="n">fasta_file</span><span class="p">,</span> <span class="n">to_file</span> <span class="o">=</span> <span class="s2">&quot;output.bed&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">CtrlF-TF</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Overview</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#aligning-k-mers-input-files">Aligning k-mers: Input files</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#alignment-parameters-core-selection">Alignment Parameters: Core Selection</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#alignment-parameters-cores-with-gaps">Alignment Parameters: Cores With Gaps</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#alignment-parameters-palindromic-models">Alignment Parameters: Palindromic Models</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#calling-tf-binding-sites">Calling TF Binding Sites</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="optimization.html">Optimization</a></li>
+<li class="toctree-l1"><a class="reference internal" href="command_line_program.html">Command Line Interface</a></li>
+<li class="toctree-l1"><a class="reference internal" href="library_api.html">Library API</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="index.html" title="previous chapter">Welcome to CtrlF-TF’s documentation!</a></li>
+      <li>Next: <a href="optimization.html" title="next chapter">Optimization</a></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2022, Zachery Mielko.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 5.3.0</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      
+      |
+      <a href="_sources/overview.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

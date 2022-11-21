@@ -1,0 +1,168 @@
+
+<!DOCTYPE html>
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+
+    <title>Welcome to CtrlF-TF’s documentation! &#8212; CtrlF-TF 1.0b1 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css" />
+    <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+    <script src="_static/jquery.js"></script>
+    <script src="_static/underscore.js"></script>
+    <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
+    <script src="_static/doctools.js"></script>
+    <script src="_static/sphinx_highlight.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Overview" href="overview.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="welcome-to-ctrlf-tf-s-documentation">
+<h1>Welcome to CtrlF-TF’s documentation!<a class="headerlink" href="#welcome-to-ctrlf-tf-s-documentation" title="Permalink to this heading">¶</a></h1>
+<p>CtrlF-TF is a package that calls transcription factor (TF) binding sites in DNA sequences. It takes k-mer TF binding data and compiles it into ranked sequences containing sites that can then be searched for in a DNA sequence.</p>
+<p>Source code is available in the GitHub repository: <a class="reference external" href="https://github.com/zmielko/CtrlF-TF">https://github.com/zmielko/CtrlF-TF</a></p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>CtrlF-TF is currently under active development and will be released as
+a 1.0 version after peer review. Please send bug reports, requests,
+and suggestions to: <a class="reference external" href="mailto:zachery&#46;mielko&#37;&#52;&#48;duke&#46;edu">zachery<span>&#46;</span>mielko<span>&#64;</span>duke<span>&#46;</span>edu</a></p>
+</div>
+<section id="installation">
+<h2>Installation<a class="headerlink" href="#installation" title="Permalink to this heading">¶</a></h2>
+<p>CtrlF-TF can currently be installed from PyPI with the following command:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pip install CtrlF-TF
+</pre></div>
+</div>
+<p>This will install the package and the following required dependencies:</p>
+<ul class="simple">
+<li><p>pandas</p></li>
+<li><p>numpy</p></li>
+<li><p>scipy</p></li>
+<li><p>pyahocorasick</p></li>
+</ul>
+</section>
+<section id="contents">
+<h2>Contents<a class="headerlink" href="#contents" title="Permalink to this heading">¶</a></h2>
+<div class="toctree-wrapper compound">
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="overview.html">Overview</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="overview.html#aligning-k-mers-input-files">Aligning k-mers: Input files</a></li>
+<li class="toctree-l2"><a class="reference internal" href="overview.html#alignment-parameters-core-selection">Alignment Parameters: Core Selection</a></li>
+<li class="toctree-l2"><a class="reference internal" href="overview.html#alignment-parameters-cores-with-gaps">Alignment Parameters: Cores With Gaps</a></li>
+<li class="toctree-l2"><a class="reference internal" href="overview.html#alignment-parameters-palindromic-models">Alignment Parameters: Palindromic Models</a></li>
+<li class="toctree-l2"><a class="reference internal" href="overview.html#calling-tf-binding-sites">Calling TF Binding Sites</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="optimization.html">Optimization</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="optimization.html#the-classifiedsequences-class">The ClassifiedSequences Class</a></li>
+<li class="toctree-l2"><a class="reference internal" href="optimization.html#optimization-of-alignparameters">Optimization of AlignParameters</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="command_line_program.html">Command Line Interface</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="command_line_program.html#calling-tf-binding-sites-ctrlf-sitecall">Calling TF binding sites: ctrlf sitecall</a></li>
+<li class="toctree-l2"><a class="reference internal" href="command_line_program.html#creating-searchable-sites-ctrlf-compile">Creating searchable sites: ctrlf compile</a></li>
+<li class="toctree-l2"><a class="reference internal" href="command_line_program.html#classification-of-sequences-for-optimization-ctrlf-classify">Classification of sequences for optimization: ctrlf classify</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="library_api.html">Library API</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="library_api.html#alignparameters">AlignParameters</a></li>
+<li class="toctree-l2"><a class="reference internal" href="library_api.html#bedtuple">BedTuple</a></li>
+<li class="toctree-l2"><a class="reference internal" href="library_api.html#classifiedsequences">ClassifiedSequences</a></li>
+<li class="toctree-l2"><a class="reference internal" href="library_api.html#ctrlf">CtrlF</a></li>
+<li class="toctree-l2"><a class="reference internal" href="library_api.html#optimize">Optimize</a></li>
+<li class="toctree-l2"><a class="reference internal" href="library_api.html#sitetuple">SiteTuple</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="#">CtrlF-TF</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="overview.html">Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="optimization.html">Optimization</a></li>
+<li class="toctree-l1"><a class="reference internal" href="command_line_program.html">Command Line Interface</a></li>
+<li class="toctree-l1"><a class="reference internal" href="library_api.html">Library API</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="#">Documentation overview</a><ul>
+      <li>Next: <a href="overview.html" title="next chapter">Overview</a></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2022, Zachery Mielko.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 5.3.0</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      
+      |
+      <a href="_sources/index.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>
