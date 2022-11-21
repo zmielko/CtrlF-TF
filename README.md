@@ -11,3 +11,7 @@ CtrlF-TF can be installed from pypi with the following command:
 `pip install CtrlF-TF`
 
 This installs the `ctrlf_tf` python module and the `ctrlf` command line tool. The package is compatible with Linux and macOS. It has not been tested on Windows.
+
+### Documentation
+
+The CtrlF-TF documentation can be found here: https://zmielko.github.io/CtrlF-TF
