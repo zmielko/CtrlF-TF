@@ -1,6 +1,8 @@
 """Functions for compiling aligned, ranked k-mers into binding sites
 """
 
+from collections import defaultdict
+import itertools
 import math
 from typing import Iterable, List
 
@@ -8,7 +10,8 @@ import numpy as np
 import pandas as pd
 import ctrlf_tf.str_utils
 
-COMPILED_LABEL = "Aligned_Sequences"
+COMPILED_LABEL = "Aligned_Binding_Sites"
+ALIGNED_POSITION_LABEL = "Relative_Position"
 
 
 def bounds_from_aligned_positions(aligned_positions: Iterable[int],
@@ -19,7 +22,8 @@ def bounds_from_aligned_positions(aligned_positions: Iterable[int],
     return (left_bound, right_bound)
 
 
-def sequence_position(sequence):
+def sequence_position(sequence: str) -> tuple:
+    """Return tuple with start and end positions of an aligned sequence."""
     # Initialize parameters
     left = -1
     right = len(sequence) - 1
@@ -32,7 +36,8 @@ def sequence_position(sequence):
             right = idx
             break
     if left == -1:
-        raise ValueError("Input string is not in the form of characters with surrounding wildcards.")
+        raise ValueError(("Input string is not in the form of characters with"
+                          "surrounding wildcards."))
     return (left, right)
 
 
@@ -172,32 +177,30 @@ def is_subset(str_a, str_b):
 
 
 def create_traverse_compatibility_matricies(padded_kmers: Iterable[str]) -> tuple:
-    """
+    """Generate traversal and compatibility matricies from padded k-mers.
 
-    Returns a traversal and compatibility matrix as a tuple.
-    Traversal matrix: Binary adjacency matrix where 1 represents a hamming
-    distance threshold
-    Compatibility matrix: Binary adjacency matrix where 1 represents projection compatibility
+    Given an iterable of padded k-mers, generates a compatibility and traversal
+    matrix. Each matrix is binary where a 0 represents not traversable or
+    compatible and a 1 indicates a k-mer pair is traverseable or compatible.
+    The matricies are calculated for the triangle and then copied on either
+    side so as to avoid redundant loops.
+
     """
-    # Generate COMPAT and TRAVERSE matricies
-    traverse_matrix = []
-    compatibility_matrix = []
-    # Generate matricies (naive)
-    for i in padded_kmers:
-        t_row, c_row = [], []
-        for j in padded_kmers:
-            if ctrlf_tf.str_utils.hamming_distance(i, j) <= 2:
-                t_row.append(1)
-            else:
-                t_row.append(0)
-            if ctrlf_tf.str_utils.compatible_description(i, j):
-                c_row.append(1)
-            else:
-                c_row.append(0)
-        traverse_matrix.append(t_row)
-        compatibility_matrix.append(c_row)
-    traverse_matrix = np.array(traverse_matrix)
-    compatibility_matrix = np.array(compatibility_matrix)
+    # Initialize the matricies as all 0
+    n_kmers = len(padded_kmers)
+    traverse_matrix = np.zeros((n_kmers, n_kmers))
+    compatibility_matrix = np.zeros((n_kmers, n_kmers))
+    # For each unique combination, determine if the pair should be changed to 1
+    for i, j in itertools.combinations(range(n_kmers), 2):
+        if ctrlf_tf.str_utils.hamming_distance(padded_kmers[i], padded_kmers[j]) <= 2:
+            traverse_matrix[i][j] = 1
+            traverse_matrix[j][i] = 1
+        if ctrlf_tf.str_utils.compatible_description(padded_kmers[i], padded_kmers[j]):
+            compatibility_matrix[i][j] = 1
+            compatibility_matrix[j][i] = 1
+    # Fill in the diagonal with 1
+    np.fill_diagonal(traverse_matrix, 1)
+    np.fill_diagonal(compatibility_matrix, 1)
     return (traverse_matrix, compatibility_matrix)
 
 
@@ -219,7 +222,7 @@ def solve_kmer(kmer_idx,
         seen_idxs = [kmer_idx]
     # First, zero out the kmer_idx column to prevent backtravel
     traverse_matrix[:, kmer_idx] = 0
-    # First, merge previous compatibility with current
+    # Merge previous compatibility with current
     compatible_array = compatible_matrix[kmer_idx] * prior_compatibility
     # Then merge the compatibility with the traverse array
     traverse_array = traverse_matrix[kmer_idx] * compatible_array
@@ -244,10 +247,10 @@ def solve_kmer(kmer_idx,
 
 
 def solve_matricies(kmer_idx_dict: dict,
-                           traverse_m: np.array,
-                           compat_m: np.array,
-                           description_m: np.array) -> set:
-    """Returns all possible KOMPAS solutions."""
+                    traverse_m: np.array,
+                    compat_m: np.array,
+                    description_m: np.array) -> set:
+    """Returns all possible solutions."""
     compiled_ans = set()
     for kmer_idx in kmer_idx_dict:
         result = []
@@ -297,11 +300,12 @@ def expand_gapped_consensus(consensus_sites, scores, kmer_idxs):
             output_exp.append((j, ap, score, kmeridxs, word_len))
     output_exp_df = pd.DataFrame(output_exp)
     output_exp_df = output_exp_df.rename(columns={0: COMPILED_LABEL,
-                                                  1: "Core_Position",
+                                                  1: ALIGNED_POSITION_LABEL,
                                                   2: "Rank_Score",
                                                   3: "Kmer_Idxs",
                                                   4: "Word_Len"})
-    output_exp_df = output_exp_df.sort_values(by=["Rank_Score", "Word_Len"], ascending=[False, True])
+    output_exp_df = output_exp_df.sort_values(by=["Rank_Score", "Word_Len"],
+                                              ascending=[False, True])
     output_exp_df = output_exp_df.reset_index(drop=True)
     # Drop duplicates after expansion
     output_exp_df = output_exp_df.drop_duplicates(subset=COMPILED_LABEL,
@@ -328,11 +332,82 @@ def determine_optimal_consensus_sites(sorted_consensus: Iterable[str]) -> set:
     return set(optimal_ans)
 
 
+def create_PT_DFA(start_positions, end_positions):
+    # Create a nested default dictionary of default dictionaries
+    partition_dictionary = defaultdict(lambda : defaultdict(dict))
+    # Populate the partition dictionaries with start and end positions
+    for start, end in zip(start_positions, end_positions):
+        partition_dictionary[start][end] = {}
+    return partition_dictionary
+
+def search_PT_DFA(sequence, start, end, PT_DFA):
+    """Search the Partitioned-Trie for a sequence"""
+    cur_node = PT_DFA[start][end]
+    answer = True # initialize as True
+    for letter in sequence[start:end]: # For each letter in the sequence
+        if letter not in cur_node: # If there is no path to the letter, 
+            answer = False # Then the answer is false.
+            break
+        cur_node = cur_node[letter] # Otherwise, navigate to the next node
+    return answer
+
+def add_to_PT_DFA(sequence, start, end, PT_DFA):
+    """Add a DNA sequence to the Paritioned-Trie"""
+    # Initialize node at the correct partition
+    cur_node = PT_DFA[start][end]
+    # For each letter in the sequence
+    for letter in sequence[start:end]:
+        # If the node cannot be traversed to the letter, add it
+        if letter not in cur_node:
+            cur_node[letter] = {}
+        cur_node = cur_node[letter]
+
+
+def search_across_PT_partitions(sequence, start, end, PT_DFA, minsize):
+    valid_start = range(start, end - minsize + 1)
+    for s in list(filter(lambda x: x in valid_start, PT_DFA.keys())):
+        for e in list(filter(lambda x: x <= end, PT_DFA[s])):
+            if search_PT_DFA(sequence, s, e, PT_DFA):
+                return True
+    return False
+
+
+def filter_redundant_solutions(solution_dataframe):
+    """Return the minimal consensus sites from all solutions
+    
+    Given a dataframe of solutions, some solutions may have subsets of 
+    higher rank that will always be called and scored higher. This returns
+    the subset of solutions of optimally ranking solutions with no higher
+    ranked subset. It does this using a partitioned trie. 
+    """
+    # Create partitioned trie
+    pt_dfa = create_PT_DFA(solution_dataframe["Relative_Position"],
+                           solution_dataframe["End_Position"])
+    # Calculate the minimum soluton word size for use in searching the pt_dfa
+    min_solution_word_size = min(solution_dataframe["Word_Len"])
+    result = set()
+    # For each solution
+    for sol_query, start, end in zip(solution_dataframe[COMPILED_LABEL],
+                                     solution_dataframe["Relative_Position"],
+                                     solution_dataframe["End_Position"]):
+        # Check to see if the solution matches in the PT
+        in_pt_dfa = search_across_PT_partitions(sol_query,
+                                                start,
+                                                end,
+                                                pt_dfa,
+                                                min_solution_word_size)
+        if in_pt_dfa is False:
+            # If not, add it to the PT and the result for optimal solutions
+            add_to_PT_DFA(sol_query, start, end, pt_dfa)
+            result.add(sol_query)
+    return result
+
 
 def bounds_from_aligned_kmer_df(kmer_dataframe):
     max_word_len = max([len(kmer) for kmer in kmer_dataframe.iloc[:, 0]])
     aligned_positions = kmer_dataframe.iloc[:, 1]
-    left_bound, right_bound = bounds_from_aligned_positions(aligned_positions, max_word_len)
+    left_bound, right_bound = bounds_from_aligned_positions(aligned_positions,
+                                                            max_word_len)
     return (left_bound, right_bound)
 
 
@@ -340,8 +415,8 @@ def relative_consensus_df_from_abs(input_df, abs_core_start):
     df = input_df.copy(deep=True)
     df["Align_Position"] = df[COMPILED_LABEL].apply(lambda x: get_align_position(x))
     df[COMPILED_LABEL] = df[COMPILED_LABEL].apply(lambda x: x.strip('.'))
-    df["Core_Position"] = abs_core_start - df["Align_Position"] - 1
-    df = df[[COMPILED_LABEL, "Core_Position", "Rank_Score"]]
+    df[ALIGNED_POSITION_LABEL ] = abs_core_start - df["Align_Position"] - 1
+    df = df[[COMPILED_LABEL, ALIGNED_POSITION_LABEL , "Rank_Score"]]
     return df
 
 
@@ -351,7 +426,8 @@ def compile_consensus_sites(kmer_dataframe, core_positions):
     kmers = kmer_dataframe.iloc[:, 0]
     max_word_len = max([len(kmer) for kmer in kmer_dataframe.iloc[:, 0]])
     aligned_positions = kmer_dataframe.iloc[:, 1]
-    left_bound, right_bound = bounds_from_aligned_positions(aligned_positions, max_word_len)
+    left_bound, right_bound = bounds_from_aligned_positions(aligned_positions,
+                                                            max_word_len)
     # Pad k-mers relative to bounds
     padded_kmers = []
     for row in kmer_dataframe.itertuples():
@@ -359,7 +435,9 @@ def compile_consensus_sites(kmer_dataframe, core_positions):
         padded_kmers.append(padded_kmer)
     #Create Matricies
     traverse_m, compat_m = create_traverse_compatibility_matricies(padded_kmers)
-    core_position_array = calculate_core_position_array(core_positions, left_bound, right_bound)
+    core_position_array = calculate_core_position_array(core_positions,
+                                                        left_bound,
+                                                        right_bound)
     description_m = description_matrix_from_kmers(kmers,
                                                   aligned_positions,
                                                   core_position_array,
@@ -377,7 +455,9 @@ def compile_consensus_sites(kmer_dataframe, core_positions):
     output_exp_df = expand_gapped_consensus(output_df[COMPILED_LABEL],
                                             output_df["Score"],
                                             output_df["Kmer_Idxs"])
-    optimal_ans = determine_optimal_consensus_sites(output_exp_df[COMPILED_LABEL])
+    output_exp_df["End_Position"] = output_exp_df[ALIGNED_POSITION_LABEL] + output_exp_df["Word_Len"]
+    # Remove redundant solutions
+    optimal_ans = filter_redundant_solutions(output_exp_df)
     output_exp_df = output_exp_df[output_exp_df[COMPILED_LABEL].isin(optimal_ans)]
     output_exp_df = output_exp_df.sort_values(by=["Rank_Score", COMPILED_LABEL], ascending=False)
     output_exp_df = output_exp_df.reset_index(drop=True)
