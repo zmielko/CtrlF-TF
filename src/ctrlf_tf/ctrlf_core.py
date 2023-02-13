@@ -26,7 +26,7 @@ import ctrlf_tf.parse_utils
 import ctrlf_tf.compile_utils
 import ctrlf_tf.site_call_utils
 
-__version__ = "1.0b1.post1"
+__version__ = "1.0b2"
 __author__ = "Zachery Mielko"
 
 

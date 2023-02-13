@@ -146,9 +146,9 @@ def _config_classify_parser(parser):
     parser.add_argument("-m",
                         "--method",
                         type=str,
-                        choices=["kde_z4", "z-score"],
-                        default='kde_z4',
-                        help="Classification method, default = kde_z4.")
+                        choices=["kde", "z-score", "kde_z4"],
+                        default='kde',
+                        help="Classification method, default = kde.")
     parser.add_argument("-z",
                         "--z_scores",
                         nargs=2,
@@ -164,6 +164,11 @@ def _config_classify_parser(parser):
                         "--ln_transform",
                         action="store_true",
                         help="Natural log transform the values prior to classification.")
+    parser.add_argument("-kde_p",
+                        "--kde_positive_ratio",
+                        type=float,
+                        default=1,
+                        help="Multiplier of kde negative threshold to obtain positive threshold.")
     return parser
 
 
@@ -270,7 +275,8 @@ def _classify_program(args):
                                                                z_positive=args.z_scores[1],
                                                                sequence_start=string_start,
                                                                sequence_end=string_end,
-                                                               ln_transform=args.ln_transform)
+                                                               ln_transform=args.ln_transform,
+                                                               kde_positive_ratio=args.kde_positive_ratio)
     if args.output:
         results.save_to_file(args.output)
     else:
