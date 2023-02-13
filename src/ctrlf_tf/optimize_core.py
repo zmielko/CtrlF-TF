@@ -85,12 +85,13 @@ class ClassifiedSequences:
     @classmethod
     def classify_from_dataframe(cls,
                                 df: pd.DataFrame,
-                                method: str = "kde_z4",
+                                method: str = "kde",
                                 z_negative: int = 3,
                                 z_positive: int = 4,
                                 sequence_start: int = None,
                                 sequence_end: int = None,
-                                ln_transform: bool = False):
+                                ln_transform: bool = False,
+                                kde_positive_ratio = 1):
         """Classifies a set of de Bruijn sequences using a given method.
 
         Factory method to create a ClassifiedDeBruijn object from a pandas
@@ -105,18 +106,17 @@ class ClassifiedSequences:
         ...   ...
         ===== =========
 
-        By default, classification is done using the kde_z4 method. This
+        By default, classification is done using the kde method. This
         calculates the Kernal Density Estimate (Gaussian) of the
         distribution and selects the maximum result of each value as an
         input. Then the distance between the minimum value and this value
         is multiplied by 2 and that is the kde threshold. This is compared
-        to a modified z-score based on medians of 4 (assuming a Gaussian
-        distribution). The negative and positive thresholds are determined
-        by the minimum and maximum of these results respectively.
+        to a percent multiplier of the total distance.
 
         Otherwise, classification can be done using the "z-score" method.
         This calculated the modified z-score for a given negative and
         positive value as the negative and positive thresholds respectively.
+        
 
         :param dataframe: Dataframe of the de Bruijn sequence information
         :type dataframe: Pandas DataFrame
@@ -134,6 +134,8 @@ class ClassifiedSequences:
         :param sequence_end: Optional end index for the de Bruijn sequence
             (default None)
         :type sequence_end: int
+        :param kde_positive_ratio: Positive threshold from multiplying value by negative threshold.
+        :type kde_positive_ratio: float
         :returns: ClassifiedDeBruijn Object
         """
         df = df.rename(columns={df.columns[0]: "Values",
@@ -147,6 +149,8 @@ class ClassifiedSequences:
                                                      z_negative)
             positive = ctrlf_tf.threshold_utils.threshold_from_zscore(df["Values"],
                                                      z_positive)
+        elif method == "kde":
+            negative, positive = ctrlf_tf.threshold_utils.threshold_from_kde(df["Values"], kde_positive_ratio)
         else:
             raise ValueError("Method must be 'kde_z4' or 'z-score'")
         group_tuple = ctrlf_tf.threshold_utils.classify_values(df["Values"],

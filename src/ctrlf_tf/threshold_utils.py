@@ -115,6 +115,30 @@ def thresholds_kde_zscore(values: Iterable[float]) -> Tuple[float, float]:
     return (negative_threshold, positive_threshold)
 
 
+def threshold_from_kde(values: Iterable[float], positive_ratio: float) -> Tuple[float, float]:
+    """Threshold based on the distance from the max KDE to the left tail
+
+    Given an iterable of values, calculates kde max + (kdx max - min value)
+    to determine the negative threshold. The positive threshold is a ratio
+    from the negative threshold that is 1 or more to ensure the positive
+    threshold is larger than the negative threshold.
+
+    :param values: Iterable of values to calculate thresholds from
+    :param positive_ratio: Ratio of positive threshold from negative threshold
+    :returns: A tuple of negative and positive threshold values
+    """
+    # Calculate thresholds for negative and positive values
+    if positive_ratio < 1:
+        raise ValueError(f"positive ratio is {positive_ratio}, must be 1 or greater.")
+    negative = left_tail_flip_threshold(values)
+    positive = negative * positive_ratio
+    negative_threshold = ThresholdTuple("Kernal Density Estimate",
+                                        negative)
+    positive_threshold = ThresholdTuple(f"{positive_ratio} x KDE",
+                                        positive)
+    return (negative_threshold, positive_threshold)
+
+
 def classify_values(values: Iterable[float],
                     negative_threshold: float,
                     positive_threshold: float) -> Tuple[str]:
