@@ -235,7 +235,7 @@ class Optimize:
                  parameter_dataframe: pd.DataFrame = None,
                  tpr_fpr_dictionary: dict = None,
                  optimal_parameters: ctrlf_tf.ctrlf_core.AlignParameters = None,
-                 gap_thresholds={0: 0.35, 1: 0.40, 2: 0.43}):
+                 gap_thresholds={0: 0.35, 1: 0.35, 2: 0.35}):
         """Initialize Optimize class.
 
         Takes as input AlignParameters, a classified_df sequence,

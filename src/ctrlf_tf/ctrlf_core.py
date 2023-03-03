@@ -26,7 +26,7 @@ import ctrlf_tf.parse_utils
 import ctrlf_tf.compile_utils
 import ctrlf_tf.site_call_utils
 
-__version__ = "1.0b2"
+__version__ = "1.0b3"
 __author__ = "Zachery Mielko"
 
 
@@ -194,7 +194,7 @@ class AlignedKmers:
                                                         parameters.threshold_column,
                                                         parameters.gap_limit)
         else:
-            raise ValueError("Parameters do not contain a kmer or selex source.")
+            raise ValueError("Parameters do not contain a kmer source.")
         # Adj threshold column
         rank_score_label = parameters.threshold_column
         if rank_score_label is None:

@@ -124,29 +124,6 @@ def get_align_position(kmer: str, wildcard: str ='.') -> int:
     return -1
 
 
-def expand_kmer(kmer: str) -> List[str]:
-    """Given a k-mer with wildcards as '.' returns all non-gapped sequences."""
-    results = []
-
-    def recurse_expand(fullword, result, idx):
-        if idx == len(fullword):
-            results.append(result)
-            return
-        if fullword[idx] == '.':
-            for i in ["A", "C", "G", "T"]:
-                recurse_expand(fullword, result + i, idx + 1)
-        else:
-            recurse_expand(fullword, result + fullword[idx], idx + 1)
-    recurse_expand(kmer, '', 0)
-    return results
-
-
-def expand_kmer_maintain_pos(kmer: str, ap: int, r: int, total_len: int):
-    """Returns expanded k-mers in the same aligned position."""
-    expanded_kmers = expand_kmer(kmer[ap:r])
-    return list(map(lambda x: ('.' * ap) + x + ('.' * (total_len - r)), expanded_kmers))
-
-
 def merge_kmers(kmer_idxs: Iterable[int], kmer_dict: dict) -> str:
     """Projects k-mers onto a single string."""
     kmer_list = [kmer_dict[i] for i in kmer_idxs]
@@ -294,7 +271,7 @@ def expand_gapped_consensus(consensus_sites, scores, kmer_idxs):
     for i, score, kmeridxs in zip(consensus_sites, scores, kmer_idxs):
         ap = get_align_position(i)
         end = len(i.rstrip('.'))
-        results = expand_kmer_maintain_pos(i, ap,end, LEN)
+        results = ctrlf_tf.str_utils.expand_kmer_maintain_pos(i, ap,end, LEN)
         word_len = len(i.strip('.'))
         for j in results:
             output_exp.append((j, ap, score, kmeridxs, word_len))

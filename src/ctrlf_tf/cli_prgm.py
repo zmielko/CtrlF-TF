@@ -99,9 +99,13 @@ def _config_compile_parser(parser):
     optimization.add_argument("-gthr",
                               "--gap_thresholds",
                               nargs='*',
-                              default=[0.35, 0.40, 0.43],
+                              default=[0.25, 0.35, 0.38],
                               type=float,
                               help="Rank score thresholds for optimizing gaps (Default is E-score based)")
+    optimization.add_argument("-opt_only",
+                              "--optimization_only",
+                              action="store_true",
+                              help="Boolean flag, if used the program only does the optimization and does not compile the top answer.")
     return parser
 
 
@@ -244,8 +248,9 @@ def _compile_program(args):
         parameters = opt_obj.optimal_parameters
         if args.output_report:
             opt_obj.save_to_file(args.output_report)
-    compiled_kmers = cftf.CompiledKmers.from_parameters(parameters)
-    compiled_kmers.save_compiled_sites(args.output)
+    if args.optimization_only is False:
+        compiled_kmers = cftf.CompiledKmers.from_parameters(parameters)
+        compiled_kmers.save_compiled_sites(args.output)
 
 
 def _call_program(args):

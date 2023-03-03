@@ -2,3 +2,5 @@ numpy
 pandas
 scipy
 pyahocorasick
+networkx
+pybktree

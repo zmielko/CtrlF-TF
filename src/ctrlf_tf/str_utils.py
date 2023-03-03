@@ -134,3 +134,26 @@ def total_length_aligned_strs(aligned_strs):
             init = aligned_strs[0]
             raise ValueError(f"String length not consistant in total length calculation:\n{init}\n{i}")
     return total_length
+
+
+def expand_kmer(kmer: str) -> List[str]:
+    """Given a k-mer with wildcards as '.' returns all non-gapped sequences."""
+    results = []
+
+    def recurse_expand(fullword, result, idx):
+        if idx == len(fullword):
+            results.append(result)
+            return
+        if fullword[idx] == '.':
+            for i in ["A", "C", "G", "T"]:
+                recurse_expand(fullword, result + i, idx + 1)
+        else:
+            recurse_expand(fullword, result + fullword[idx], idx + 1)
+    recurse_expand(kmer, '', 0)
+    return results
+
+
+def expand_kmer_maintain_pos(kmer: str, ap: int, r: int, total_len: int):
+    """Returns expanded k-mers in the same aligned position."""
+    expanded_kmers = expand_kmer(kmer[ap:r])
+    return list(map(lambda x: ('.' * ap) + x + ('.' * (total_len - r)), expanded_kmers))

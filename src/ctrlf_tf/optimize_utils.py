@@ -11,6 +11,7 @@ import numpy as np
 from scipy import stats
 from scipy.interpolate import interp1d
 import ctrlf_tf.ctrlf_core
+import ctrlf_tf.site_call_utils
 
 IterationTuple = namedtuple("IterationTuple", ["direction",
                                                "start",
@@ -117,6 +118,8 @@ def fpr_score_threshold(iterationtuple, fpr_threshold):
     """Return the score threshold at the FPR threshold."""
     dataframe = iterationtuple.tpr_fpr_dataframe
     dataframe = dataframe[dataframe["FPR"] <= fpr_threshold]
+    if len(dataframe) == 0:
+        return -math.inf
     min_score = min(dataframe["Score"])
     return min_score
 
@@ -181,6 +184,48 @@ def find_best_iteration(iterations):
     return result
 
 
+
+# def tpr_fpr_df_from_parameters(parameters, classified_df) -> float:
+#     """AUROC from parameters.
+
+#     Given a start, end, core_gaps, and gap_number, returns a
+#     AUROC for the parameter set.
+#     """
+#     try:
+#         ctrlf_obj = ctrlf_tf.ctrlf_core.CtrlF.from_parameters(parameters)
+#     except:
+#         print("Parameters could not be compiled", parameters, file=sys.stderr)
+#         raise
+#     scores = []
+#     site_count = []
+#     site_scores = []
+#     site_list = []
+#     for sequence in classified_df["Sequence"]:
+#         sites = ctrlf_obj.call_sites(sequence, fixed_length=False)
+#         site_count.append(len(sites))
+#         if len(sites) == 0:
+#             scores.append(-math.inf)
+#             site_scores.append([-math.inf])
+#             site_list.append([''])
+#         else:
+#             site_scores.append(sites)
+#             max_score = -math.inf
+#             this_site = []
+#             for site in sites:
+#                 this_site.append(sequence[site.start:site.end])
+#                 if site.threshold > max_score:
+#                     max_score = site.threshold
+#             scores.append(max_score)
+#             site_list.append(this_site)
+#     classified_df["CtrlF_Threshold"] = scores
+#     classified_df["Count"] = site_count
+#     classified_df["Site_Calls"] = site_scores
+#     classified_df["Sequence_Sites"] = site_list
+#     tpr_fpr_df = tpr_fpr_from_calls(classified_df["CtrlF_Threshold"],
+#                                     classified_df["Group"])
+#     return tpr_fpr_df
+
+
 def tpr_fpr_df_from_parameters(parameters, classified_df) -> float:
     """AUROC from parameters.
 
@@ -188,16 +233,19 @@ def tpr_fpr_df_from_parameters(parameters, classified_df) -> float:
     AUROC for the parameter set.
     """
     try:
-        ctrlf_obj = ctrlf_tf.ctrlf_core.CtrlF.from_parameters(parameters)
+        ak_obj = ctrlf_tf.ctrlf_core.AlignedKmers.from_parameters(parameters)
     except:
         print("Parameters could not be compiled", parameters, file=sys.stderr)
         raise
+    noncompiled_preprocess = ctrlf_tf.site_call_utils.noncompile_preprocessing_from_aligned_kmers(ak_obj.aligned_kmer_dataframe, ak_obj.core_positions)
+    is_palindrome = parameters.palindrome
     scores = []
     site_count = []
     site_scores = []
     site_list = []
     for sequence in classified_df["Sequence"]:
-        sites = ctrlf_obj.call_sites(sequence, fixed_length=False)
+        sites = ctrlf_tf.site_call_utils.call_sites_with_kmers(sequence, noncompiled_preprocess, is_palindrome)
+        #sites = ctrlf_obj.call_sites(sequence, fixed_length=False)
         site_count.append(len(sites))
         if len(sites) == 0:
             scores.append(-math.inf)
@@ -220,6 +268,7 @@ def tpr_fpr_df_from_parameters(parameters, classified_df) -> float:
     tpr_fpr_df = tpr_fpr_from_calls(classified_df["CtrlF_Threshold"],
                                     classified_df["Group"])
     return tpr_fpr_df
+
 
 
 def auroc_from_tpr_fpr(tpr_fpr_dataframe: pd.DataFrame,

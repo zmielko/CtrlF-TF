@@ -1,10 +1,11 @@
 Metadata-Version: 2.1
 Name: CtrlF-TF
-Version: 1.0b1.post1
+Version: 1.0b3
 Summary: Protein-DNA binding site caller from kmer data
 Author: Zachery Mielko
 License: BSD 3-Clause License
 Keywords: Bioinformatics,Scientific Computing
+Platform: UNKNOWN
 Classifier: Development Status :: 4 - Beta
 Classifier: Programming Language :: Python :: 3
 Classifier: Topic :: Scientific/Engineering :: Bio-Informatics
@@ -27,3 +28,9 @@ CtrlF-TF can be installed from pypi with the following command:
 `pip install CtrlF-TF`
 
 This installs the `ctrlf_tf` python module and the `ctrlf` command line tool. The package is compatible with Linux and macOS. It has not been tested on Windows.
+
+### Documentation
+
+The CtrlF-TF documentation can be found here: https://zmielko.github.io/CtrlF-TF
+
+
