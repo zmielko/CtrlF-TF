@@ -31,7 +31,7 @@ def _add_alignparams_to_parser(parser):
                           "--kmer_file",
                           required=True,
                           type=str,
-                          help="Kmer file in a")
+                          help="File with k-mers and a ranked score.")
     alignment.add_argument("-p",
                         "--palindrome",
                         action="store_true",
@@ -284,21 +284,16 @@ def _optimize_program(args):
 
 def _call_program(args):
     # Determine if to init CtrlF from k-mers or solutions
-    print("Init Calling Program...")
     with open(args.input_model) as read_obj:
         lines = read_obj.readlines()
         if lines[1].startswith("#Palindrome"):
-            print("Kmer file found...")
             ctrlf_object = cftf.CtrlF.from_alignment_file(args.input_model)
         else:
-            print("Compiled file found...")
             ctrlf_object = cftf.CtrlF.from_compiled_sites(args.input_model)
     if args.output:
         output = args.output
     else:
         output = sys.stdout
-    print("Calling...")
-    print("Using Compilation?", ctrlf_object.is_compiled)
     ctrlf_object.call_sites_from_fasta(args.fasta_file,
                                        args.genomic_coordinates,
                                        output)
