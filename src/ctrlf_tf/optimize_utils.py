@@ -233,19 +233,19 @@ def tpr_fpr_df_from_parameters(parameters, classified_df) -> float:
     AUROC for the parameter set.
     """
     try:
-        ak_obj = ctrlf_tf.ctrlf_core.AlignedKmers.from_parameters(parameters)
+        ctrlf_obj = ctrlf_tf.ctrlf_core.CtrlF.from_parameters(parameters)
     except:
         print("Parameters could not be compiled", parameters, file=sys.stderr)
         raise
-    noncompiled_preprocess = ctrlf_tf.site_call_utils.noncompile_preprocessing_from_aligned_kmers(ak_obj.aligned_kmer_dataframe, ak_obj.core_positions)
-    is_palindrome = parameters.palindrome
+    #noncompiled_preprocess = ctrlf_tf.site_call_utils.noncompile_preprocessing_from_aligned_kmers(ak_obj.aligned_kmer_dataframe, ak_obj.core_positions)
+    #is_palindrome = parameters.palindrome
     scores = []
     site_count = []
     site_scores = []
     site_list = []
     for sequence in classified_df["Sequence"]:
-        sites = ctrlf_tf.site_call_utils.call_sites_with_kmers(sequence, noncompiled_preprocess, is_palindrome)
-        #sites = ctrlf_obj.call_sites(sequence, fixed_length=False)
+        #sites = ctrlf_tf.site_call_utils.call_sites_with_kmers(sequence, noncompiled_preprocess, is_palindrome)
+        sites = ctrlf_obj.call_sites(sequence)
         site_count.append(len(sites))
         if len(sites) == 0:
             scores.append(-math.inf)

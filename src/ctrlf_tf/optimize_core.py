@@ -313,6 +313,8 @@ class Optimize:
         classified_dataframe = pd.read_csv(StringIO(classified_df_string), sep='\t')
         parameter_dataframe = pd.read_csv(StringIO(parameters_string),
                                           sep='\t')
+        # Convert empty list into list instead of a string
+        parameter_dataframe["Core_Gaps"] = parameter_dataframe["Core_Gaps"].apply(lambda x: ctrlf_tf.parse_utils.parse_parameter_str("Core_Gaps", x))
         # Parse tpr_fpr_dictionary from dataframe
         tpr_fpr_dataframe = pd.read_csv(StringIO(tpr_fpr_string), sep='\t')
         tpr_fpr_dictionary = {}
@@ -323,7 +325,8 @@ class Optimize:
                    classified_df=classified_dataframe,
                    fpr_threshold=fpr_threshold,
                    parameter_dataframe=parameter_dataframe,
-                   tpr_fpr_dictionary=tpr_fpr_dictionary)
+                   tpr_fpr_dictionary=tpr_fpr_dictionary,
+                   optimal_parameters=ctrlf_tf.optimize_utils.optimal_parameters_from_df(parameter_dataframe, init_parameters))
 
     def save_to_file(self, file_path: str):
         """Save optimized parameter information to a text file.

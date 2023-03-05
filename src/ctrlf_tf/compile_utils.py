@@ -14,14 +14,6 @@ COMPILED_LABEL = "Aligned_Binding_Sites"
 ALIGNED_POSITION_LABEL = "Relative_Position"
 
 
-def bounds_from_aligned_positions(aligned_positions: Iterable[int],
-                                  max_word_len: int) -> tuple:
-    """Returns a left and right bound integer as a tuple."""
-    left_bound = min(aligned_positions)
-    right_bound = max(aligned_positions) + max_word_len
-    return (left_bound, right_bound)
-
-
 def sequence_position(sequence: str) -> tuple:
     """Return tuple with start and end positions of an aligned sequence."""
     # Initialize parameters
@@ -383,8 +375,8 @@ def filter_redundant_solutions(solution_dataframe):
 def bounds_from_aligned_kmer_df(kmer_dataframe):
     max_word_len = max([len(kmer) for kmer in kmer_dataframe.iloc[:, 0]])
     aligned_positions = kmer_dataframe.iloc[:, 1]
-    left_bound, right_bound = bounds_from_aligned_positions(aligned_positions,
-                                                            max_word_len)
+    left_bound, right_bound = ctrlf_tf.str_utils.bounds_from_aligned_positions(aligned_positions,
+                                                                               max_word_len)
     return (left_bound, right_bound)
 
 
@@ -403,8 +395,8 @@ def compile_consensus_sites(kmer_dataframe, core_positions):
     kmers = kmer_dataframe.iloc[:, 0]
     max_word_len = max([len(kmer) for kmer in kmer_dataframe.iloc[:, 0]])
     aligned_positions = kmer_dataframe.iloc[:, 1]
-    left_bound, right_bound = bounds_from_aligned_positions(aligned_positions,
-                                                            max_word_len)
+    left_bound, right_bound = ctrlf_tf.str_utils.bounds_from_aligned_positions(aligned_positions,
+                                                                               max_word_len)
     # Pad k-mers relative to bounds
     padded_kmers = []
     for row in kmer_dataframe.itertuples():

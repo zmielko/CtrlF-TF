@@ -17,6 +17,7 @@ from io import StringIO
 import sys
 from typing import Iterable, Tuple
 
+import networkx as nx
 import numpy as np
 import pandas as pd
 
@@ -26,7 +27,7 @@ import ctrlf_tf.parse_utils
 import ctrlf_tf.compile_utils
 import ctrlf_tf.site_call_utils
 
-__version__ = "1.0b3"
+__version__ = "1.0b4"
 __author__ = "Zachery Mielko"
 
 
@@ -170,7 +171,8 @@ class AlignedKmers:
                  palindrome: bool = None,
                  pwm: np.ndarray = None,
                  version: str = None,
-                 kmer_dataframe: pd.DataFrame = None):
+                 kmer_dataframe: pd.DataFrame = None,
+                 traversal_graph: nx.Graph = None):
         """Class initialization."""
         self.core_positions = core_positions
         self.aligned_kmer_dataframe = aligned_kmer_dataframe
@@ -179,6 +181,9 @@ class AlignedKmers:
         self.pwm = pwm
         self.version = version
         self.kmer_dataframe = kmer_dataframe
+        self.traversal_graph = traversal_graph
+        if self.core_positions:
+            self.core_span = max(self.core_positions)
 
     @classmethod
     def from_parameters(cls, parameters: AlignParameters):
@@ -211,24 +216,28 @@ class AlignedKmers:
         pwm = ctrlf_tf.pwm_utils.trim_pwm_by_core(pwm, core_range, parameters.core_gaps)
         # Find core absolute start position and relative positions
         core_positions = ctrlf_tf.pwm_utils.core_positions_from_pwm(pwm,
-                                                               parameters.core_gaps)
+                                                                    parameters.core_gaps)
         core_absolute_start = core_positions[0] + pad_length
         # Pad PWM with equiprobable flanks
         pwm_padded = ctrlf_tf.pwm_utils.pad_pwm_equiprobable(pwm, pad_length)
         pwm_dict = ctrlf_tf.pwm_utils.pwm_ndarray_to_dict(pwm_padded)
-        # Generate aligned kmers and hamming distance graph
+        # Generate aligned kmers
         aligned_kmer_df = ctrlf_tf.pwm_utils.align_kmers_from_df(kmer_df,
-                                                                  pwm_dict,
-                                                                  parameters.palindrome,
-                                                                  core_absolute_start,
-                                                                  rank_score_label)
-        return cls(core_positions,
-                   aligned_kmer_df,
-                   k,
-                   parameters.palindrome,
-                   pwm,
-                   parameters.version,
-                   kmer_df)
+                                                                 pwm_dict,
+                                                                 parameters.palindrome,
+                                                                 core_absolute_start,
+                                                                 rank_score_label)
+        # Generate traversal graph
+        padded_kmers = ctrlf_tf.str_utils.padded_kmers_from_aligned_df(aligned_kmer_df)
+        traversal_graph = ctrlf_tf.str_utils.create_traverse_graph_from_padded_kmers(padded_kmers)
+        return cls(core_positions=core_positions,
+                   aligned_kmer_dataframe=aligned_kmer_df,
+                   k=k,
+                   palindrome=parameters.palindrome,
+                   pwm=pwm,
+                   version=parameters.version,
+                   kmer_dataframe=kmer_df,
+                   traversal_graph=traversal_graph)
 
     @classmethod
     def from_alignment_file(cls, file_path: str):
@@ -250,20 +259,29 @@ class AlignedKmers:
             palindrome = ctrlf_tf.parse_utils.parse_boolean(data_obj.readline().strip())
             core_positions = ctrlf_tf.parse_utils.parse_core_positions(data_obj.readline().strip())
             pwm = np.loadtxt(data_obj, delimiter='\t', skiprows=1, max_rows=4)
-            # Parse k-mer dataframe
-            aligned_kmer_dataframe = pd.read_csv(data_obj, sep='\t', skiprows=1)
+        dataframe_str, graph_str = aligned_kmer_data.split("#Aligned Kmers\n")[-1].split("#Traversal Graph\n")
+        # Parse k-mer dataframe
+        with StringIO(dataframe_str) as read_obj:
+            aligned_kmer_dataframe = pd.read_csv(read_obj, sep='\t')
+        # Parse Traversal Graph
+        with StringIO(graph_str) as read_obj:
+            adj_lines = []
+            for i in read_obj:
+                adj_lines.append(i.rstrip())
+        traversal_graph = nx.parse_adjlist(adj_lines, nodetype=int)
         # Parse k and max length
         k = ctrlf_tf.str_utils.k_from_kmers(aligned_kmer_dataframe.iloc[:, 0])
         # Return AlignedKmers object
-        return cls(core_positions,
-                   aligned_kmer_dataframe,
-                   k,
-                   palindrome,
-                   pwm,
-                   version)
+        return cls(core_positions=core_positions,
+                   aligned_kmer_dataframe=aligned_kmer_dataframe,
+                   k=k,
+                   palindrome=palindrome,
+                   pwm=pwm,
+                   version=version,
+                   traversal_graph=traversal_graph)
 
     def copy(self):
-        """Create a deep copy of the AlignedKmers object."""
+        """Create a deep copy of the object."""
         return copy.deepcopy(self)
 
     # Public instance methods
@@ -294,19 +312,16 @@ class AlignedKmers:
         output_df = self.aligned_kmer_dataframe.copy(deep=True)
         output_df["Align_Score"] = output_df["Align_Score"].apply(lambda x: "{:e}".format(x))
         output_df.to_csv(output_file_object, sep='\t', index=False)
+        # Save Traversal Graph to File
+        output_file_object.write("#Traversal Graph\n")
+        for line in nx.generate_adjlist(self.traversal_graph):
+            output_file_object.write(f"{line}\n")
         # Close file object if needed
         if location != sys.stdout:
             output_file_object.close()
 
-
-class CompiledKmers(AlignedKmers):
-    """Compiles aligned k-mers into consensus sites.
-
-    This class is a child class of AlignedKmers that compiles the
-    k-mers into consensus sites are part of the initialization
-    process. The class also defines how compiled sites are saved
-    and loaded to populate a new CompiledKmers object.
-    """
+class CtrlF(AlignedKmers):
+    """"""
     def __init__(self,
                  core_positions: Tuple[int] = None,
                  aligned_kmer_dataframe: pd.DataFrame = None,
@@ -315,31 +330,58 @@ class CompiledKmers(AlignedKmers):
                  pwm: np.ndarray = None,
                  version: str = None,
                  kmer_dataframe: pd.DataFrame = None,
+                 traversal_graph: nx.Graph = None,
                  compiled_site_dataframe: pd.DataFrame = None,
                  abs_core_start: int = None,
-                 abs_core_end: int = None):
+                 abs_core_end: int = None,
+                 is_compiled: bool = False):
         super().__init__(core_positions=core_positions,
                          aligned_kmer_dataframe=aligned_kmer_dataframe,
                          k=k,
                          palindrome=palindrome,
                          pwm=pwm,
                          version=version,
-                         kmer_dataframe=kmer_dataframe)
+                         kmer_dataframe=kmer_dataframe,
+                         traversal_graph=traversal_graph)
+        # General attributes
+        self.is_compiled = is_compiled
+        # Compiled Solution-Specific Items
         self.compiled_site_dataframe = compiled_site_dataframe
         self.abs_core_start = abs_core_start
         self.abs_core_end = abs_core_end
-        if self.compiled_site_dataframe is None:
-            # Generate compiled sequences
-            self.compiled_site_dataframe = ctrlf_tf.compile_utils.compile_consensus_sites(self.aligned_kmer_dataframe, self.core_positions)
-            # Trim edges to minimal bounds
-            left_idx, right_idx = ctrlf_tf.compile_utils.bounds_from_aligned_sequences(self.compiled_site_dataframe[ctrlf_tf.compile_utils.COMPILED_LABEL])
-            self.compiled_site_dataframe[ctrlf_tf.compile_utils.COMPILED_LABEL] = self.compiled_site_dataframe[ctrlf_tf.compile_utils.COMPILED_LABEL].apply(lambda x: x[left_idx:right_idx])
-        if self.abs_core_start is None and self.abs_core_end is None:
-            self.abs_core_start = abs(min(self.aligned_kmer_dataframe["Align_Position"])) + 1 - left_idx
-            self.abs_core_end = self.abs_core_start + max(self.core_positions)
-        if self.abs_core_start is None or self.abs_core_end is None:
-            raise ValueError("CompiledKmers object initialize with 1 of [abs_core_start, abs_core_end]. Must specify neither or both.")
+        if self.is_compiled:
+            self._update_compile_search_items()
+        # Non-compiled Search Items
+        if self.is_compiled is False:
+            self._update_noncompile_search_items()
+
+    def _update_compile_search_items(self):
+        """If compiled solutions are available, update necessary search items"""
+        self._site_len = ctrlf_tf.str_utils.total_length_aligned_strs(self.compiled_site_dataframe[ctrlf_tf.compile_utils.COMPILED_LABEL])
+        self.site_span = self._site_len - 1
         self.core_span = self.abs_core_end - self.abs_core_start
+        self._internal_cs_df = self.compiled_site_dataframe.copy(deep=True)
+        self._internal_cs_df["Site_End_Pos"] = self._internal_cs_df[ctrlf_tf.compile_utils.COMPILED_LABEL].apply(lambda x: ctrlf_tf.str_utils.relative_end_positions(x))
+        self._internal_cs_df["Core_End_Pos"] = self._internal_cs_df[ctrlf_tf.compile_utils.COMPILED_LABEL].apply(lambda x: ctrlf_tf.str_utils.relative_end_positions(x, start_position=self.abs_core_start - 1))
+        self._internal_cs_df["Search_Sites"] = self._internal_cs_df[ctrlf_tf.compile_utils.COMPILED_LABEL].apply(lambda x: x.strip('.'))
+        self.compile_automata = ctrlf_tf.site_call_utils.automata_from_sites(self._internal_cs_df["Search_Sites"])
+        self.fixed_length_search_dict = ctrlf_tf.site_call_utils.compiled_dict_from_compiled_sequences(self._internal_cs_df["Search_Sites"],
+                                                                                                       self._internal_cs_df["Site_End_Pos"],
+                                                                                                       self._internal_cs_df["Rank_Score"])
+        self.variable_length_search_dict = ctrlf_tf.site_call_utils.compiled_dict_from_compiled_sequences(self._internal_cs_df["Search_Sites"],
+                                                                                                          self._internal_cs_df["Core_End_Pos"],
+                                                                                                          self._internal_cs_df["Rank_Score"])
+        self.is_compiled = True
+
+    def compile_all_solutions(self):
+        """Generates all possible solutions as ranked patterns (in place)."""
+        self.compiled_site_dataframe = ctrlf_tf.compile_utils.compile_consensus_sites(self.aligned_kmer_dataframe, self.core_positions)
+        # Trim edges to minimal bounds
+        left_idx, right_idx = ctrlf_tf.compile_utils.bounds_from_aligned_sequences(self.compiled_site_dataframe[ctrlf_tf.compile_utils.COMPILED_LABEL])
+        self.compiled_site_dataframe[ctrlf_tf.compile_utils.COMPILED_LABEL] = self.compiled_site_dataframe[ctrlf_tf.compile_utils.COMPILED_LABEL].apply(lambda x: x[left_idx:right_idx])
+        self.abs_core_start = abs(min(self.aligned_kmer_dataframe["Align_Position"])) + 1 - left_idx
+        self.abs_core_end = self.abs_core_start + max(self.core_positions)
+        self._update_compile_search_items()
 
     def save_compiled_sites(self, output=None, minimal=True):
         """Saves compiled sites as a table to a file or stdout.
@@ -387,48 +429,10 @@ class CompiledKmers(AlignedKmers):
                    palindrome=palindrome,
                    abs_core_start=abs_core_start,
                    abs_core_end=abs_core_end,
-                   compiled_site_dataframe=compiled_site_df)
+                   compiled_site_dataframe=compiled_site_df,
+                   is_compiled=True)
 
-
-class CtrlF(CompiledKmers):
-    """Class used to align, compile, and call sites."""
-    def __init__(self,
-                 core_positions: Tuple[int] = None,
-                 aligned_kmer_dataframe: pd.DataFrame = None,
-                 k: int = None,
-                 palindrome: bool = None,
-                 pwm: np.ndarray = None,
-                 version: str = None,
-                 kmer_dataframe: pd.DataFrame = None,
-                 compiled_site_dataframe: pd.DataFrame = None,
-                 abs_core_start: int = None,
-                 abs_core_end: int = None):
-        super().__init__(core_positions=core_positions,
-                         aligned_kmer_dataframe=aligned_kmer_dataframe,
-                         k=k,
-                         palindrome=palindrome,
-                         pwm=pwm,
-                         version=version,
-                         kmer_dataframe=kmer_dataframe,
-                         compiled_site_dataframe=compiled_site_dataframe,
-                         abs_core_start=abs_core_start,
-                         abs_core_end=abs_core_end)
-        # Setup internal copy with end positions for rigid and flexible searches.
-        self._site_len = ctrlf_tf.str_utils.total_length_aligned_strs(self.compiled_site_dataframe[ctrlf_tf.compile_utils.COMPILED_LABEL])
-        self.site_span = self._site_len - 1
-        self._internal_cs_df = self.compiled_site_dataframe.copy(deep=True)
-        self._internal_cs_df["Site_End_Pos"] = self._internal_cs_df[ctrlf_tf.compile_utils.COMPILED_LABEL].apply(lambda x: ctrlf_tf.str_utils.relative_end_positions(x))
-        self._internal_cs_df["Core_End_Pos"] = self._internal_cs_df[ctrlf_tf.compile_utils.COMPILED_LABEL].apply(lambda x: ctrlf_tf.str_utils.relative_end_positions(x, start_position=self.abs_core_start - 1))
-        self._internal_cs_df["Search_Sites"] = self._internal_cs_df[ctrlf_tf.compile_utils.COMPILED_LABEL].apply(lambda x: x.strip('.'))
-        self.automata = ctrlf_tf.site_call_utils.automata_from_sites(self._internal_cs_df["Search_Sites"])
-        self.fixed_length_search_dict = ctrlf_tf.site_call_utils.compiled_dict_from_compiled_sequences(self._internal_cs_df["Search_Sites"],
-                                                                                                self._internal_cs_df["Site_End_Pos"],
-                                                                                                self._internal_cs_df["Rank_Score"])
-        self.variable_length_search_dict = ctrlf_tf.site_call_utils.compiled_dict_from_compiled_sequences(self._internal_cs_df["Search_Sites"],
-                                                                                                   self._internal_cs_df["Core_End_Pos"],
-                                                                                                   self._internal_cs_df["Rank_Score"])
-
-    def call_sites(self, sequence: str, fixed_length=True):
+    def _call_sites_with_compiled_solutions(self, sequence: str, fixed_length=True):
         """Returns a list of SiteTuples from an input sequence.
 
         Given a sequence, returns a list of SiteTuples for each called site.
@@ -449,17 +453,68 @@ class CtrlF(CompiledKmers):
             site_span = self.core_span
         # Call sites from the input sequence orientation, if palindrome return the results
         orient1 = ctrlf_tf.site_call_utils.site_dict_from_sequence(sequence,
-                                                                   self.automata,
+                                                                   self.compile_automata,
                                                                    compiled_site_dict)
         if self.palindrome:
             return ctrlf_tf.site_call_utils.site_dict_to_sitetuples(orient1, sequence, '.', site_span)
         # Otherwise call sites on the reverse complement and return results from both orientations
         orient2 = ctrlf_tf.site_call_utils.site_dict_from_sequence(ctrlf_tf.str_utils.reverse_complement(sequence),
-                                                                   self.automata,
+                                                                   self.compile_automata,
                                                                    compiled_site_dict)
         pos_sites = ctrlf_tf.site_call_utils.site_dict_to_sitetuples(orient1, sequence, '+', site_span)
         neg_sites = ctrlf_tf.site_call_utils.site_dict_to_sitetuples(orient2, sequence, '-', site_span)
         return pos_sites + neg_sites
+
+    def _update_noncompile_search_items(self):
+        """Update attributes required for k-mer based search."""
+        self.index_to_score_dict = ctrlf_tf.site_call_utils.index_to_score_dict_from_aligned_df(self.aligned_kmer_dataframe)
+        self.kmer_to_index_dict = ctrlf_tf.site_call_utils.kmer_to_index_dict_from_aligned_df(self.aligned_kmer_dataframe)
+        self.index_to_core_position_dict = ctrlf_tf.site_call_utils.kmer_idx_to_core_position_dict_from_aligned_df(self.aligned_kmer_dataframe, self.core_positions)
+        self.expanded_kmer_to_original_dict = ctrlf_tf.site_call_utils.expanded_kmer_to_original_dict_from_aligned_df(self.aligned_kmer_dataframe)
+        self.kmer_automata = ctrlf_tf.site_call_utils.automata_from_sites(list(self.expanded_kmer_to_original_dict.keys()))
+        self.site_span = max(self.core_positions)
+
+    def _call_sites_with_kmers(self, sequence: str):
+        """Returns a list of SiteTuples from an input sequence.
+
+        Given a sequence, returns a list of SiteTuples for each called site.
+
+        :param sequence: Input DNA sequence
+        :type sequence: str
+        :param fixed_length: Search mode assumes a fixed model length
+        :type fixed_length: bool
+        :returns: List of SiteTuples
+        """
+        # Set sequence to uppercase so match is case insensisitivw
+        sequence = sequence.upper()
+        # Call sites from the input sequence orientation, if palindrome return the results
+        orient1 = ctrlf_tf.site_call_utils.site_dict_noncompiled_from_sequence(sequence,
+                                                                               self.kmer_automata,
+                                                                               self.expanded_kmer_to_original_dict,
+                                                                               self.kmer_to_index_dict,
+                                                                               self.index_to_score_dict,
+                                                                               self.traversal_graph,
+                                                                               self.index_to_core_position_dict)
+        if self.palindrome:
+            return ctrlf_tf.site_call_utils.site_dict_to_sitetuples(orient1, sequence, '.', self.site_span)
+        # Otherwise call sites on the reverse complement and return results from both orientations
+        orient2 = ctrlf_tf.site_call_utils.site_dict_noncompiled_from_sequence(ctrlf_tf.str_utils.reverse_complement(sequence),
+                                                      self.kmer_automata,
+                                                      self.expanded_kmer_to_original_dict,
+                                                      self.kmer_to_index_dict,
+                                                      self.index_to_score_dict,
+                                                      self.traversal_graph,
+                                                      self.index_to_core_position_dict)
+        pos_sites = ctrlf_tf.site_call_utils.site_dict_to_sitetuples(orient1, sequence, '+', self.site_span)
+        neg_sites = ctrlf_tf.site_call_utils.site_dict_to_sitetuples(orient2, sequence, '-', self.site_span)
+        return pos_sites + neg_sites
+
+
+    def call_sites(self, sequence: str):
+        if self.is_compiled:
+            return self._call_sites_with_compiled_solutions(sequence)
+        else:
+            return self._call_sites_with_kmers(sequence)
 
     def call_sites_as_bed(self,
                           sequence: str,
@@ -479,7 +534,7 @@ class CtrlF(CompiledKmers):
         :type chromosome_start: int
         :returns: List of BedTuples
         """
-        sites = self.call_sites(sequence, fixed_length)
+        sites = self.call_sites(sequence)
         chromosome_end = chromosome_start + len(sequence)
         bedtuple_result = ctrlf_tf.site_call_utils.site_tuples_to_bed(sites,
                                                                       chromosome,

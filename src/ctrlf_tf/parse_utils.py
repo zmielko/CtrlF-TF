@@ -4,6 +4,7 @@ from typing import Iterable, Tuple
 import re
 
 import pandas as pd
+import networkx as nx
 
 
 def parse_k(kmer: str) -> int:
@@ -207,11 +208,16 @@ def parse_parameter_str(label, value):
     if value == "False":
         return False
     if label == "threshold":
+        if value == "None":
+            return None
         return float(value)
     if label in ("core_start", "core_end", "gap_limit"):
         return int(value)
     if value[0] == '[' and value[-1] == ']':
-        return [int(i) for i in value[1:-1].split()]
+        if value == '[]':
+            return []
+        else:
+            return [int(i) for i in value[1:-1].split()]
     return value
 
 def parameter_dict_from_strs(strs):

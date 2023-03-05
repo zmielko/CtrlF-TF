@@ -4,6 +4,8 @@ from collections import defaultdict
 from typing import List, Iterable
 
 import pandas as pd
+import pybktree
+import networkx as nx
 import numpy as np
 
 
@@ -136,6 +138,16 @@ def total_length_aligned_strs(aligned_strs):
     return total_length
 
 
+def pad_k(kmer: str,
+          align_position: int,
+          left_bound: int,
+          right_bound: int) -> str:
+    """Returns k-mer strings in an aligned space."""
+    left_pad = '.' * abs(left_bound - align_position)
+    right_pad = '.' * abs(right_bound - (align_position + len(kmer)))
+    return left_pad + kmer + right_pad
+
+
 def expand_kmer(kmer: str) -> List[str]:
     """Given a k-mer with wildcards as '.' returns all non-gapped sequences."""
     results = []
@@ -157,3 +169,56 @@ def expand_kmer_maintain_pos(kmer: str, ap: int, r: int, total_len: int):
     """Returns expanded k-mers in the same aligned position."""
     expanded_kmers = expand_kmer(kmer[ap:r])
     return list(map(lambda x: ('.' * ap) + x + ('.' * (total_len - r)), expanded_kmers))
+
+
+def bounds_from_aligned_positions(aligned_positions: Iterable[int],
+                                  max_word_len: int) -> tuple:
+    """Returns a left and right bound integer as a tuple."""
+    left_bound = min(aligned_positions)
+    right_bound = max(aligned_positions) + max_word_len
+    return (left_bound, right_bound)
+
+
+def padded_kmers_from_aligned_df(aligned_df):
+    """Return padded k-mers from an aligned k-mer dataframe"""
+    kmer_dataframe = aligned_df.drop_duplicates().reset_index(drop=True)
+    # Calculate bounds
+    kmers = kmer_dataframe.iloc[:, 0]
+    max_word_len = max([len(kmer) for kmer in kmer_dataframe.iloc[:, 0]])
+    aligned_positions = kmer_dataframe.iloc[:, 1]
+    left_bound, right_bound = bounds_from_aligned_positions(aligned_positions, max_word_len)
+    # Pad k-mers relative to bounds
+    padded_kmers = []
+    for row in kmer_dataframe.itertuples():
+        padded_kmer = pad_k(row.Kmer, row.Align_Position, left_bound, right_bound)
+        padded_kmers.append(padded_kmer)
+    return padded_kmers
+
+
+def create_traverse_graph_from_padded_kmers(padded_kmers: Iterable[str]) -> nx.Graph:
+    """Calculates all-v-all traversals in nlogn.
+
+    Given an interable of padded k-mers, returns a graph where each
+    node is an index number representing a k-mer and each link indicates
+    that the hamming distance between the k-mers is within a given
+    threshold (default = 2).
+
+    """
+    # Create index dictionary
+    kmer_idx_dict = {}
+    for idx, i in enumerate(padded_kmers):
+        kmer_idx_dict[i] = idx
+    # Setup Graph
+    graph = nx.Graph()
+    # Setup BKTree
+    bktree = pybktree.BKTree(hamming_distance)
+    for i in padded_kmers:
+        bktree.add(i)
+    # Search BKTree
+    for i in padded_kmers:
+        idx_a = kmer_idx_dict[i]
+        r = bktree.find(i, 2)
+        for j in r:
+            if idx_a != kmer_idx_dict[j[1]]:  # Avoid self-loops
+                graph.add_edge(idx_a, kmer_idx_dict[j[1]])
+    return graph

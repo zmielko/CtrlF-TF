@@ -8,61 +8,63 @@ import pandas as pd
 import ctrlf_tf as cftf
 
 
-MAIN_DESCRIPTION = ("CtrlF-TF: TF Binding Site Search via Aligned Sequences.")
+MAIN_DESCRIPTION = ("CtrlF-TF: Transcription Factor Binding Site Search via Aligned Sequences.")
 
 
-def _config_compile_parser(parser):
-    """Configure the arguments for the align subprogram."""
-    required = parser.add_argument_group("required arguments")
-    optimization = parser.add_argument_group("optimization arguments")
-    required.add_argument("-a",
-                          "--align_model",
-                          required=True,
-                          type=str,
-                          help="Alignment model")
-    required.add_argument("-k",
-                          "--kmer_file",
-                          required=True,
-                          type=str,
-                          help="Kmer file in a")
+def _add_output_to_parser(parser):
     parser.add_argument("-o",
                         "--output",
                         type=str,
                         default=None,
                         help="Output file, stdout by default")
-    parser.add_argument("-p",
+    return parser
+
+
+def _add_alignparams_to_parser(parser):
+    alignment = parser.add_argument_group("Alignment Parameters")
+    alignment.add_argument("-a",
+                          "--align_model",
+                          required=True,
+                          type=str,
+                          help="Alignment model")
+    alignment.add_argument("-k",
+                          "--kmer_file",
+                          required=True,
+                          type=str,
+                          help="Kmer file in a")
+    alignment.add_argument("-p",
                         "--palindrome",
                         action="store_true",
                         help="Boolean flag if the model is palindromic")
-    parser.add_argument("-m",
+    alignment.add_argument("-m",
                         "--meme",
                         action="store_true",
                         help="Boolean flag if the model is in MEME format")
-    parser.add_argument("-g",
+    alignment.add_argument("-g",
                         "--gap_limit",
                         type=int,
                         default=0,
                         help="""Filters the kmer dataframe for kmers with a
                                  max count of gaps. Must be 0 or a positive
                                  integer (default is 0).""")
-    parser.add_argument("-t",
+    alignment.add_argument("-t",
                         "--threshold",
                         type=float,
                         help=("Threshold score for kmers to align, if no "
                               "-tc argument provided, uses 3rd column."))
-    parser.add_argument("-tc",
+    alignment.add_argument("-tc",
                         "--threshold_column",
                         type=str,
                         help=("Column in the kmer dataframe to use for the "
                               "rank score (Default is 3rd column)."))
-    parser.add_argument("-r",
+    alignment.add_argument("-r",
                         "--range",
                         nargs=2,
                         type=int,
                         default=(0, 0),
                         help="""Core range for PWM model (1-based), default is
                                  the whole input""")
-    parser.add_argument("-cg",
+    alignment.add_argument("-cg",
                         "--core_gap",
                         nargs='*',
                         type=int,
@@ -71,17 +73,20 @@ def _config_compile_parser(parser):
                         relative to core range '-r') that are not part of the
                         kmer description of a site. Must be given with the '-r'
                         argument""")
-    parser.add_argument("-rc",
+    alignment.add_argument("-rc",
                         "--range_consensus",
                         type=str,
                         default=None,
                         help="""Definition of -r and -cg using the alignment of a
                         consensus site instead. A '.' character in the
                         consensus string indicates a -cg position.""")
-    optimization.add_argument("-opt",
-                              "--optimize",
-                              action="store_true",
-                              help="Boolean flag to perform optimization on classified sequences.")
+    return parser
+
+
+def _config_optimize_parser(parser):
+    parser = _add_alignparams_to_parser(parser)
+    parser = _add_output_to_parser(parser)
+    optimization = parser.add_argument_group("Optimization Parameters")
     optimization.add_argument("-c",
                               "--classify_file",
                               type=str,
@@ -91,46 +96,44 @@ def _config_compile_parser(parser):
                               type=float,
                               default=0.01,
                               help="FPR target for optimization on de bruijn data.")
-    optimization.add_argument("-orep",
-                              "--output_report",
-                              type=str,
-                              default=None,
-                              help="Output file location for Optimization Report (Default is no output)")
     optimization.add_argument("-gthr",
                               "--gap_thresholds",
                               nargs='*',
-                              default=[0.25, 0.35, 0.38],
+                              default=[0.35, 0.35, 0.38],
                               type=float,
                               help="Rank score thresholds for optimizing gaps (Default is E-score based)")
-    optimization.add_argument("-opt_only",
-                              "--optimization_only",
-                              action="store_true",
-                              help="Boolean flag, if used the program only does the optimization and does not compile the top answer.")
+    return parser
+
+
+def _config_align_compile_parser(parser):
+    parser = _add_alignparams_to_parser(parser)
+    parser = _add_output_to_parser(parser)
+    parser.add_argument("-oi",
+                        "--optimize_input",
+                        type=str,
+                        default=None,
+                        help="Use parameters from an optimization report as input in addition to -a and -k.")
     return parser
 
 
 def _config_call_parser(parser):
     """Configure the arguments for the call subprogram parser."""
     required = parser.add_argument_group("required arguments")
-    required.add_argument("-c",
-                          "--consensus_sites",
+    required.add_argument("-i",
+                          "--input_model",
                           required=True,
                           type=str,
-                          help="Compiled consensus sites file.")
+                          help="Input of Aligned k-mers or Compiled Solutions.")
     required.add_argument("-f",
                           "--fasta_file",
                           required=True,
                           type=str,
                           help="Fasta file of DNA sequences")
-    parser.add_argument("-o",
-                        "--output",
-                        type=str,
-                        default=None,
-                        help="Output file, stdout by default")
     parser.add_argument("-gc",
                         "--genomic_coordinates",
                         action="store_true",
                         help="Parse fasta input for genomic coordinates")
+    parser = _add_output_to_parser(parser)
     return parser
 
 
@@ -184,12 +187,20 @@ def _cli_parser():
     subparsers = main_parser.add_subparsers(dest="program",
                                             help="Available subcommands:")
     # Align program parser definition
-    align_parser = subparsers.add_parser("compile",
-                                         help="Align and compile k-mers into aligned sequences containing sites.")
-    align_parser = _config_compile_parser(align_parser)
+    align_parser = subparsers.add_parser("align",
+                                         help="Align k-mers to a model.")
+    align_parser = _config_align_compile_parser(align_parser)
+    # Compile program parser definition
+    compile_parser = subparsers.add_parser("compile",
+                                         help="Compile k-mers into aligned consensus sites by generating all possible solutions.")
+    compile_parser = _config_align_compile_parser(compile_parser)
+    # Optimization
+    optimize_parser = subparsers.add_parser("optimize",
+                                            help="Optimize alignment parameters based on de Bruijn sequence classification.")
+    optimize_parser = _config_optimize_parser(optimize_parser)
     # Call program parser definition
-    call_parser = subparsers.add_parser("sitecall",
-                                        help="Call sites using the aligned sequences containing sites.")
+    call_parser = subparsers.add_parser("callsites",
+                                        help="Call sites using aligned k-mers or compiled solutions.")
     call_parser = _config_call_parser(call_parser)
     # Classify program parser
     classify_parser = subparsers.add_parser("classify",
@@ -234,31 +245,60 @@ def _align_parser_validation(parser, args) -> bool:
     return True
 
 
+def _align_program(args):
+    parameters = _args_to_align_parameters(args)
+    if args.optimize_input:
+        opt_obj = cftf.Optimize.load_from_file(args.optimize_input)
+        parameters = opt_obj.optimal_parameters
+        parameters.pwm_file = args.align_model
+        parameters.kmer_file = args.kmer_file
+    aligned_kmers = cftf.AlignedKmers.from_parameters(parameters)
+    aligned_kmers.save_alignment(args.output)
+
+
 def _compile_program(args):
     parameters = _args_to_align_parameters(args)
-    if args.optimize:
-        gap_thresholds = {}
-        for idx, i in enumerate(args.gap_thresholds):
-            gap_thresholds[idx] = i
-        classified_seqs = cftf.ClassifiedSequences.load_from_file(args.classify_file)
-        opt_obj = cftf.Optimize(align_parameters=parameters,
-                                classified_df=classified_seqs.dataframe,
-                                fpr_threshold=args.fpr_threshold,
-                                gap_thresholds=gap_thresholds)
+    if args.optimize_input:
+        opt_obj = cftf.Optimize.load_from_file(args.optimize_input)
         parameters = opt_obj.optimal_parameters
-        if args.output_report:
-            opt_obj.save_to_file(args.output_report)
-    if args.optimization_only is False:
-        compiled_kmers = cftf.CompiledKmers.from_parameters(parameters)
-        compiled_kmers.save_compiled_sites(args.output)
+        parameters.pwm_file = args.align_model
+        parameters.kmer_file = args.kmer_file
+    compiled_kmers = cftf.CtrlF.from_parameters(parameters)
+    compiled_kmers.compile_all_solutions()
+    compiled_kmers.save_compiled_sites(args.output)
+
+
+def _optimize_program(args):
+    parameters = _args_to_align_parameters(args)
+    gap_thresholds = {}
+    for idx, i in enumerate(args.gap_thresholds):
+        gap_thresholds[idx] = i
+    classified_seqs = cftf.ClassifiedSequences.load_from_file(args.classify_file)
+    opt_obj = cftf.Optimize(align_parameters=parameters,
+                            classified_df=classified_seqs.dataframe,
+                            fpr_threshold=args.fpr_threshold,
+                            gap_thresholds=gap_thresholds)
+    parameters = opt_obj.optimal_parameters
+    opt_obj.save_to_file(args.output)
 
 
 def _call_program(args):
-    ctrlf_object = cftf.CtrlF.from_compiled_sites(args.consensus_sites)
+    # Determine if to init CtrlF from k-mers or solutions
+    print("Init Calling Program...")
+    with open(args.input_model) as read_obj:
+        lines = read_obj.readlines()
+        if lines[1].startswith("#Palindrome"):
+            print("Kmer file found...")
+            ctrlf_object = cftf.CtrlF.from_alignment_file(args.input_model)
+        else:
+            print("Compiled file found...")
+            ctrlf_object = cftf.CtrlF.from_compiled_sites(args.input_model)
     if args.output:
         output = args.output
     else:
         output = sys.stdout
+    print("Calling...")
+    print("Using Compilation?", ctrlf_object.is_compiled)
     ctrlf_object.call_sites_from_fasta(args.fasta_file,
                                        args.genomic_coordinates,
                                        output)
@@ -296,11 +336,17 @@ def main():
     if arguments.program == "compile":
         _align_parser_validation(parser, arguments)
         _compile_program(arguments)
+    elif arguments.program == "align":
+        _align_parser_validation(parser, arguments)
+        _align_program(arguments)
+    elif arguments.program == "optimize":
+        _align_parser_validation(parser, arguments)
+        _optimize_program(arguments)
     elif arguments.program == "classify":
         _classify_program(arguments)
     elif arguments.version:
         print(cftf.__version__)
-    elif arguments.program == "sitecall":
+    elif arguments.program == "callsites":
         _call_program(arguments)
 
 

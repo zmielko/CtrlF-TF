@@ -214,7 +214,7 @@ def padded_kmers_from_aligned_df(aligned_df):
     kmers = kmer_dataframe.iloc[:, 0]
     max_word_len = max([len(kmer) for kmer in kmer_dataframe.iloc[:, 0]])
     aligned_positions = kmer_dataframe.iloc[:, 1]
-    left_bound, right_bound = ctrlf_tf.compile_utils.bounds_from_aligned_positions(aligned_positions, max_word_len)
+    left_bound, right_bound = ctrlf_tf.str_utils.bounds_from_aligned_positions(aligned_positions, max_word_len)
     # Pad k-mers relative to bounds
     padded_kmers = []
     for row in kmer_dataframe.itertuples():
@@ -351,21 +351,26 @@ def noncompile_preprocessing_from_aligned_kmers(aligned_kmer_dataframe, core_pos
 
 
 def site_dict_noncompiled_from_sequence(sequence,
-                                        noncompilepreprocess):
+                                        automata,
+                                        expanded_kmer_to_original_dict,
+                                        kmer_to_index_dict,
+                                        index_to_score_dict,
+                                        traversal_graph,
+                                        index_to_core_position_dict):
     candidate_site_dict = defaultdict(list)
-    for match in noncompilepreprocess.kmer_automata.iter(sequence):
+    for match in automata.iter(sequence):
         match_sequence = match[1][1]
         match_position = match[0] - len(match_sequence) + 1
-        for original_kmer in noncompilepreprocess.expanded_kmer_to_original_dict[match_sequence]:
-            align_position = noncompilepreprocess.expanded_kmer_to_original_dict[match_sequence][original_kmer]
+        for original_kmer in expanded_kmer_to_original_dict[match_sequence]:
+            align_position = expanded_kmer_to_original_dict[match_sequence][original_kmer]
             rel_core = (align_position * -1) + match_position
-            candidate_site_dict[rel_core].append(noncompilepreprocess.kmer_to_index_dict[original_kmer][align_position])
+            candidate_site_dict[rel_core].append(kmer_to_index_dict[original_kmer][align_position])
     site_dict = {}
     for i in candidate_site_dict:
         score = score_site_from_candidate_list(candidate_site_dict[i],
-                                               noncompilepreprocess.index_to_score_dict,
-                                               noncompilepreprocess.traversal_graph,
-                                               noncompilepreprocess.index_to_core_position_dict)
+                                               index_to_score_dict,
+                                               traversal_graph,
+                                               index_to_core_position_dict)
         if score is not None:
             site_dict[i] = score
     return site_dict

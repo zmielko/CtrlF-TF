@@ -194,6 +194,7 @@ def trim_pwm_by_core(pwm: np.ndarray,
     end_idx = core_range[1]
     pwm = pwm[:, start_idx:end_idx]
     if core_gaps:
+        print("CORE GAPS:", core_gaps, type(core_gaps))
         for i in core_gaps:
             pwm[:, i-1] = 0.25
     return pwm
