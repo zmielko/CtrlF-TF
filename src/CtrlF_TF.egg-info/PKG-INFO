@@ -5,7 +5,6 @@ Summary: Protein-DNA binding site caller from kmer data
 Author: Zachery Mielko
 License: BSD 3-Clause License
 Keywords: Bioinformatics,Scientific Computing
-Platform: UNKNOWN
 Classifier: Development Status :: 4 - Beta
 Classifier: Programming Language :: Python :: 3
 Classifier: Topic :: Scientific/Engineering :: Bio-Informatics
@@ -32,5 +31,3 @@ This installs the `ctrlf_tf` python module and the `ctrlf` command line tool. Th
 ### Documentation
 
 The CtrlF-TF documentation can be found here: https://zmielko.github.io/CtrlF-TF
-
-

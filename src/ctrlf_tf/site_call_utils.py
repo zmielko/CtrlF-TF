@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+"""Site calling utilites."""
 
 from collections import namedtuple, defaultdict
 from typing import Iterable, List
@@ -305,23 +305,29 @@ def overlapping_kmers(graph: nx.Graph, subgraph_nodes: set) -> List[nx.Graph]:
 def score_site_from_candidate_list(candidate_list,
                                    index_to_score_dict,
                                    traversal_graph,
-                                   kmer_idx_to_core_position_dict):
-    """Current method = N2, could be NlogN"""
-    candidate_list = sorted(candidate_list)
-    kmer_idx_set = set()
-    kmer_idx_set.add(candidate_list[0])
-    for idx in range(2, len(candidate_list[1:])):
-        candidate_indexes = candidate_list[:idx]
-        kmer_idx_set.add(candidate_list[idx - 1])
-        # Check for connected groups
-        for connected_groups in overlapping_kmers(traversal_graph, kmer_idx_set):
-            core_descriptions = [kmer_idx_to_core_position_dict[i] for i in connected_groups]
-            if ctrlf_tf.compile_utils.is_core_described(core_descriptions):
-                return index_to_score_dict[candidate_indexes[-1]]
+                                   kmer_idx_to_core_position_dict) -> float:
+    """Determine if a candidate site is real and score if so.
+    
+    Given a list of candidate kmer indicies (variable) and information from
+    the alignment of k-mers (index_to_score_dict, traversal_graph,
+    kmer_idx_to_core_position_dict), finds the maximum k-mer score of a valid
+    solution. If there is one, returns the score. Otherwise, returns None. 
+    """
+    # List of candidate kmer indicies (equivalent to their ranks)
+    if len(candidate_list) >= 2: # If there are the minimum number of k-mers or more
+        # Sort the lists by rank in increasing order
+        candidate_list = sorted(candidate_list)
+        # Iteratively add to the set
+        kmer_idx_set = set()
+        kmer_idx_set.add(candidate_list[0])
+        for i in candidate_list[1:]:
+            kmer_idx_set.add(i)
+            # For each addition, check if there is an answer and if so return its score
+            for connected_groups in overlapping_kmers(traversal_graph, kmer_idx_set):
+                core_descriptions = [kmer_idx_to_core_position_dict[i] for i in connected_groups]
+                if ctrlf_tf.compile_utils.is_core_described(core_descriptions):
+                    return index_to_score_dict[i]
     return None
-
-# Search a string for all matches
-
 
 
 NonCompilePreprocess = namedtuple("NonCompilePreprocess", ["kmer_automata",
@@ -357,16 +363,31 @@ def site_dict_noncompiled_from_sequence(sequence,
                                         index_to_score_dict,
                                         traversal_graph,
                                         index_to_core_position_dict):
+    """From a string, return a dictionary of binding sites (keys) and their scores (values).
+    
+    Given a DNA sequence to search for binding sites, returns a dictionary where the keys 
+    are positions of the binding sites and the values are the scores. This is done by first
+    running the aho-corasick automata to find all possible matches of k-mers. Then, for all
+    groups of candidate sites, they are evaluated and scored. 
+    """
     candidate_site_dict = defaultdict(list)
+    # For each match from the automata match iterator:
     for match in automata.iter(sequence):
+        # parse the sequence and position of the k-mer
         match_sequence = match[1][1]
+        # match[0] will be for the end of the matched string
+        # This adjusts to have match_position at the start
         match_position = match[0] - len(match_sequence) + 1
+        # Expand the k-mers to account for gapped k-mers (1-1 if no-gap else 1-many)
         for original_kmer in expanded_kmer_to_original_dict[match_sequence]:
             align_position = expanded_kmer_to_original_dict[match_sequence][original_kmer]
+            # Determine where the binding site is relative to the k-mer match
             rel_core = (align_position * -1) + match_position
+            # Then associate the k-mer with that site
             candidate_site_dict[rel_core].append(kmer_to_index_dict[original_kmer][align_position])
-    site_dict = {}
+    site_dict = {} # Dictionary of binding sites
     for i in candidate_site_dict:
+        # Score the candidate site and if it is valid, add it to the site dictionary
         score = score_site_from_candidate_list(candidate_site_dict[i],
                                                index_to_score_dict,
                                                traversal_graph,
