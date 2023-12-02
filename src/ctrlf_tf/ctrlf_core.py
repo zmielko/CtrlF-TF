@@ -152,7 +152,11 @@ class AlignParameters:
 
     @classmethod
     def from_parameter_file(cls, file_path: str):
-        param_dict = ctrlf_tf.parse_utils.parameter_dict_from_file(file_path)
+        try:
+            param_dict = ctrlf_tf.parse_utils.parameter_dict_from_file(file_path)
+        except IOError:
+            print(f"Cannot read parameter file at path: {file_path}", file=sys.stderr)
+            raise
         return cls._from_parameter_dict(param_dict)
 
     @classmethod
@@ -251,8 +255,13 @@ class AlignedKmers:
         :returns: Class instance with data from the alignment file
         """
         # Read alignment file
-        with open(file_path) as file_obj:
-            aligned_kmer_data = file_obj.read()
+        try:
+            with open(file_path) as file_obj:
+                aligned_kmer_data = file_obj.read()
+        except IOError:
+            print(f"Cannot open alignment file from path: {file_path}",
+                  file=sys.stderr)
+            raise
         # Parse parameters in header
         with StringIO(aligned_kmer_data) as data_obj:
             version = data_obj.readline().split(': ')[1].strip()
@@ -284,18 +293,8 @@ class AlignedKmers:
         """Create a deep copy of the object."""
         return copy.deepcopy(self)
 
-    # Public instance methods
-    def save_alignment(self, location: str = None):
-        """Save alignment data to stdout or a file.
-
-        :param location: Output location, if None output will be stdout
-        :type location: str
-        """
-        # Determine if output is stdout or another location
-        if location is None:
-            output_file_object = sys.stdout
-        else:
-            output_file_object = open(location, "w")
+    def _save_alignment_data(self, output_file_object):
+        """Saves alignment data to an output file object."""
         # Write version, alignment flag, and core positions
         output_file_object.write((f"#CtrlF Version: {__version__}\n"
                                   f"#Palindrome Alignment: {self.palindrome}\n"
@@ -316,9 +315,19 @@ class AlignedKmers:
         output_file_object.write("#Traversal Graph\n")
         for line in nx.generate_adjlist(self.traversal_graph):
             output_file_object.write(f"{line}\n")
-        # Close file object if needed
-        if location != sys.stdout:
-            output_file_object.close()
+
+    # Public instance methods
+    def save_alignment(self, location: str = None):
+        """Save alignment data to stdout or a file.
+
+        :param location: Output location, if None output will be stdout
+        :type location: str
+        """
+        if location is None:
+            self._save_alignment_data(sys.stdout)
+        else:
+            with open(location, 'w') as write_obj:
+                self._save_alignment_data(write_obj)
 
 class CtrlF(AlignedKmers):
     """"""
@@ -383,19 +392,7 @@ class CtrlF(AlignedKmers):
         self.abs_core_end = self.abs_core_start + max(self.core_positions)
         self._update_compile_search_items()
 
-    def save_compiled_sites(self, output=None, minimal=True):
-        """Saves compiled sites as a table to a file or stdout.
-
-        :param output: Output location (default = stdout)
-        :type output: str
-        :param minimal: If *true*, removes column showing which kmer indexes
-                were used to generate the solution.
-        :type minimlal: bool
-        """
-        if output is None:
-            output_file_object = sys.stdout
-        else:
-            output_file_object = open(output, "w")
+    def _save_compiled_site_data(self, output_file_object, minimal=True):
         search_orientation = "+/-"
         if self.palindrome:
             search_orientation = '.'
@@ -410,8 +407,21 @@ class CtrlF(AlignedKmers):
             self.compiled_site_dataframe.to_csv(output_file_object,
                                                 sep='\t',
                                                 index=False)
-        if output is not None:
-            output_file_object.close()
+
+    def save_compiled_sites(self, output=None, minimal=True):
+        """Saves compiled sites as a table to a file or stdout.
+
+        :param output: Output location (default = stdout)
+        :type output: str
+        :param minimal: If *true*, removes column showing which kmer indexes
+                were used to generate the solution.
+        :type minimal: bool
+        """
+        if output is None:
+            self._save_compiled_site_data(sys.stdout, minimal=minimal)
+        else:
+            with open(output, 'w') as output_file_object:
+                self._save_compiled_site_data(output_file_object, minimal=minimal)
 
     @classmethod
     def from_compiled_sites(cls, file_path):
@@ -420,11 +430,16 @@ class CtrlF(AlignedKmers):
         :param file_path: File location of compiled sites.
         :type file_path: str
         """
-        with open(file_path) as file_obj:
-            version = file_obj.readline().strip().split(": ")[1]
-            palindrome = ctrlf_tf.parse_utils.parse_orientation_bool(file_obj.readline().rstrip())
-            abs_core_start, abs_core_end = ctrlf_tf.parse_utils.parse_integer_parameters(file_obj.readline())
-            compiled_site_df = pd.read_csv(file_obj, sep='\t')
+        try:
+            with open(file_path) as file_obj:
+                version = file_obj.readline().strip().split(": ")[1]
+                palindrome = ctrlf_tf.parse_utils.parse_orientation_bool(file_obj.readline().rstrip())
+                abs_core_start, abs_core_end = ctrlf_tf.parse_utils.parse_integer_parameters(file_obj.readline())
+                compiled_site_df = pd.read_csv(file_obj, sep='\t')
+        except IOError:
+            print(f"Cannot open compiled sites file at path: {file_path}",
+                  file=sys.stderr)
+            raise
         return cls(version=version,
                    palindrome=palindrome,
                    abs_core_start=abs_core_start,
@@ -567,36 +582,35 @@ class CtrlF(AlignedKmers):
         :type to_file: str
         :returns: By default a Pandas DataFrame of called sites in bed format but if to_file is specified, writes the results to a file in bed format
         """
-        fasta_file_object = open(fasta_file)
-        # If to_file, open output location, else initialize empty list
-        if to_file is None:
-            results = []
-            output_file_object = None
-        elif isinstance(to_file, str):
-            output_file_object = open(to_file, 'w')
-        elif to_file == sys.stdout:
-            output_file_object = sys.stdout
-        # For each pair of rows in the fasta file
-        reading = True
-        while reading:
-            header, sequence = ctrlf_tf.parse_utils.read_fasta_entry(fasta_file_object)
-            if header:
-                # Parse the chromosome, start position, and sequence
-                chromosome, start = ctrlf_tf.parse_utils.parse_fasta_header(header.rstrip(), genomic_label)
-                sequence = sequence.rstrip().upper()
-                # Call sites and convert them to bed format
-                bed_list = self.call_sites_as_bed(sequence, chromosome, start)
-                # If outputing to a file or stdout, write output
-                if output_file_object:
-                    for site in bed_list:
-                        formated_site = "\t".join([str(i) for i in site])
-                        output_file_object.write(formated_site + '\n')
-                # Otherwise add to result list
+        with open(fasta_file) as fasta_file_object:
+            # If to_file, open output location, else initialize empty list
+            if to_file is None:
+                results = []
+                output_file_object = None
+            elif isinstance(to_file, str):
+                output_file_object = open(to_file, 'w')
+            elif to_file == sys.stdout:
+                output_file_object = sys.stdout
+            # For each pair of rows in the fasta file
+            reading = True
+            while reading:
+                header, sequence = ctrlf_tf.parse_utils.read_fasta_entry(fasta_file_object)
+                if header:
+                    # Parse the chromosome, start position, and sequence
+                    chromosome, start = ctrlf_tf.parse_utils.parse_fasta_header(header.rstrip(), genomic_label)
+                    sequence = sequence.rstrip().upper()
+                    # Call sites and convert them to bed format
+                    bed_list = self.call_sites_as_bed(sequence, chromosome, start)
+                    # If outputing to a file or stdout, write output
+                    if output_file_object:
+                        for site in bed_list:
+                            formated_site = "\t".join([str(i) for i in site])
+                            output_file_object.write(formated_site + '\n')
+                    # Otherwise add to result list
+                    else:
+                        results += bed_list
                 else:
-                    results += bed_list
-            else:
-                reading = False
-        fasta_file_object.close()
+                    reading = False
         # If output is a file, close it
         if isinstance(to_file, str):
             output_file_object.close()

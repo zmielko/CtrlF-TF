@@ -19,3 +19,4 @@ src/ctrlf_tf/pwm_utils.py
 src/ctrlf_tf/site_call_utils.py
 src/ctrlf_tf/str_utils.py
 src/ctrlf_tf/threshold_utils.py
+tests/test_str_utils.py
