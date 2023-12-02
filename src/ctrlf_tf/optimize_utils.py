@@ -300,7 +300,7 @@ def auroc_from_tpr_fpr(tpr_fpr_dataframe: pd.DataFrame,
                                          "FPR": fpr_list})
     # Take only the max FPR at each TPR
     tpr_fpr_at_threshold = tpr_fpr_at_threshold.groupby(by="FPR")
-    tpr_fpr_at_threshold = tpr_fpr_at_threshold.aggregate(np.max)
+    tpr_fpr_at_threshold = tpr_fpr_at_threshold.aggregate("max")
     tpr_fpr_at_threshold = tpr_fpr_at_threshold.reset_index()
     # Shift values and convert to array
     fpr_prior = shift_values(tpr_fpr_at_threshold, "FPR", "prior")
