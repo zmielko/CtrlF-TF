@@ -53,3 +53,11 @@ def test_k_from_kmers():
     with pytest.raises(ValueError):
         bad_input = ["TTCCGGA", "TT.CGGA"]
         ctrlf_tf.str_utils.k_from_kmers(bad_input)
+
+def test_is_palindrome():
+    palindromes = ["CACGTG", "TTCCNGGAA", "GNACANNNTGTNC"]
+    nonpalindromes = ["TTCC", "TTCCAGGAA", "TNNN"]
+    for i in palindromes:
+        assert ctrlf_tf.str_utils.is_palindrome(i)
+    for i in nonpalindromes:
+        assert ctrlf_tf.str_utils.is_palindrome(i) is False

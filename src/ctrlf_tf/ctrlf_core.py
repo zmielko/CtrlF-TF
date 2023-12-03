@@ -104,24 +104,24 @@ class AlignParameters:
         """Parse and validate input parameters."""
         # Validate PWM model parameters
         ctrlf_tf.parse_utils.validate_align_parameters(self.core_start,
-                                                        self.core_end,
-                                                        self.range_consensus,
-                                                        self.threshold,
-                                                        self.threshold_column)
+                                                       self.core_end,
+                                                       self.range_consensus,
+                                                       self.threshold,
+                                                       self.threshold_column)
         # If a range consensus is specified, update the core and gap parameters
         if self.range_consensus:
             pwm = ctrlf_tf.pwm_utils.read_pwm_file(self.pwm_file,
-                                                    self.pwm_file_format)
+                                                   self.pwm_file_format)
             full_pwm_dict = ctrlf_tf.pwm_utils.pwm_ndarray_to_dict(pwm)
             full_pwm_dict_rc = ctrlf_tf.pwm_utils.pwm_ndarray_to_dict(pwm[::-1, ::-1])
             parsed_params = ctrlf_tf.pwm_utils.model_params_from_consensus(self.range_consensus,
-                                                                            full_pwm_dict,
-                                                                            full_pwm_dict_rc)
-            self.core_start, self.core_end, self.core_gaps, self.pwm_reverse_complement = parsed_params
+                                                                           full_pwm_dict,
+                                                                           full_pwm_dict_rc)
+            self.core_start, self.core_end, self.core_gaps, self.pwm_reverse_complement, self.palindrome = parsed_params
         # If no range consensus or core specification, update core as whole PWM
         elif self.core_start == 0 and self.core_end == 0:
             pwm = ctrlf_tf.pwm_utils.read_pwm_file(self.pwm_file,
-                                                    self.pwm_file_format)
+                                                   self.pwm_file_format)
             self.core_start = 1
             self.core_end = pwm.shape[1]
             self.core_gaps = []

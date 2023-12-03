@@ -34,6 +34,29 @@ def reverse_complement(sequence: str) -> str:
     return complement_sequence[::-1]
 
 
+def is_palindrome(string: str) -> bool:
+    """Return True if input string is palindromic, otherwise False.
+
+    Determines if a string is a DNA palindrome, where one half is
+    the reverse complement of the other. If the length of the string
+    is odd, then the left and right halves from the middle character
+    are checked if the middle character is a wildcard.
+    """
+    if len(string) % 2 == 0:
+        compare_length = len(string)
+        left_half = string[:int(compare_length/2)]
+        right_half = string[int(compare_length/2):]
+        return left_half == reverse_complement(right_half)
+    else:
+        compare_length = len(string) - 1
+        middle_letter = string[int(compare_length/2)]
+        if middle_letter in {'.', 'N'}:
+            left_half = string[:int(compare_length/2)]
+            right_half = string[int(compare_length/2) + 1:]
+            return left_half == reverse_complement(right_half)
+        return False
+
+
 def compatible_description(string1: str, string2: str) -> bool:
     """Return True if 2 aligned strings can describe the same space.
 

@@ -25,10 +25,12 @@ def alignment_score_position(kmer: str, pwm_dict: dict) -> Tuple[float, int]:
     for pwm_position in range(pwm_length - len(kmer) + 1):
         score = 1
         for letter_position, letter in enumerate(kmer):
-            if letter != '.':
+            if letter in {'A', 'C', 'G', 'T'}:
                 score = score * pwm_dict[letter][letter_position + pwm_position]
-            else:
+            elif letter in {'.', 'N'}:
                 score = score * 0.25
+            else:
+                raise ValueError(f"Letter {letter} from {kmer} is not a valid option from: 'A','C','G','T','.','N'.")
         score_list.append(score)
     max_score = max(score_list)
     align_position = [idx for idx, score in enumerate(score_list) if score == max_score]
@@ -176,14 +178,18 @@ def model_params_from_consensus(consensus: str,
     if score_rc > score_f:
         position = position_rc
         pwm_reverse_complement = True
-    position = position[0]
+    position = position[position_choice]
     start_param = position + 1
     end_param = position + len(consensus)
     core_gap_iterable = []
     for idx, i in enumerate(consensus):
         if i == '.':
             core_gap_iterable.append(idx + 1)
-    return (start_param, end_param, core_gap_iterable, pwm_reverse_complement)
+    return (start_param,
+            end_param,
+            core_gap_iterable,
+            pwm_reverse_complement,
+            ctrlf_tf.str_utils.is_palindrome(consensus))
 
 
 def trim_pwm_by_core(pwm: np.ndarray,
@@ -194,7 +200,6 @@ def trim_pwm_by_core(pwm: np.ndarray,
     end_idx = core_range[1]
     pwm = pwm[:, start_idx:end_idx]
     if core_gaps:
-        print("CORE GAPS:", core_gaps, type(core_gaps))
         for i in core_gaps:
             pwm[:, i-1] = 0.25
     return pwm
