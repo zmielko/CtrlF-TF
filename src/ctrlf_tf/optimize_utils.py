@@ -456,3 +456,23 @@ def optimal_parameters_from_df(parameter_dataframe: pd.DataFrame,
     result.gap_limit = gap_limit
     result.threshold = threshold
     return result
+
+
+def distance_adjusted_threshold(parameter_dataframe: pd.DataFrame,
+                                tpr_fpr_dictionary: dict,
+                                max_fpr: float) -> float:
+    """Chooses a threshold less than a given max FPR.
+
+    Given a parameter dataframe and the tpr_fpr_dictionary, the
+    tpr_fpr dataframe of the best performing model is subset by the
+    max fpr (x-axis). The distance from the top left (0,1) is derived
+    for each tpr_fpr pair in the benchmark where the fpr is scaled such
+    that the max allowed fpr is equal to the max allowed tpr of 1. Then
+    the minimum distance is selected as the threshold.
+    """
+    best_id = parameter_dataframe["pAUROC"].idxmax()
+    tpr_fpr_df = tpr_fpr_dictionary[best_id]
+    scale_factor = 1 / max_fpr
+    distances_from_zero_one = [math.dist((0, 1), (fpr * scale_factor, tpr)) for fpr, tpr in zip(tpr_fpr_df["FPR"], tpr_fpr_df["TPR"])]
+    tpr_fpr_df["Distance"] = distances_from_zero_one
+    return tpr_fpr_df[tpr_fpr_df["FPR"] <= max_fpr].sort_values(by="Distance").reset_index(drop=True)["Score"][0]

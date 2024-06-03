@@ -21,71 +21,97 @@ def _add_output_to_parser(parser):
 
 
 def _add_alignparams_to_parser(parser):
-    alignment = parser.add_argument_group("Alignment Parameters")
+    alignment = parser.add_argument_group("Input-Output Parameters")
     alignment.add_argument("-a",
-                          "--align_model",
-                          required=True,
-                          type=str,
-                          help="Alignment model")
+                           "--align_model",
+                           required=True,
+                           type=str,
+                           help="PWM model the k-mers are aligned to.")
     alignment.add_argument("-k",
-                          "--kmer_file",
-                          required=True,
-                          type=str,
-                          help="File with k-mers and a ranked score.")
-    alignment.add_argument("-p",
-                        "--palindrome",
-                        action="store_true",
-                        help="Boolean flag if the model is palindromic")
+                           "--kmer_file",
+                           required=True,
+                           type=str,
+                           help="File with k-mers in the first 2 columns sorted by a ranked score.")
+    alignment.add_argument("-oi",
+                           "--optimize_input",
+                           type=str,
+                           default=None,
+                           help="""In addition to the required '-a' and '-k' arguments, use the optimized parameters from
+                           the output of 'ctrlf optimize'.""")
     alignment.add_argument("-m",
-                        "--meme",
-                        action="store_true",
-                        help="Boolean flag if the model is in MEME format")
-    alignment.add_argument("-g",
-                        "--gap_limit",
-                        type=int,
-                        default=0,
-                        help="""Filters the kmer dataframe for kmers with a
-                                 max count of gaps. Must be 0 or a positive
-                                 integer (default is 0).""")
-    alignment.add_argument("-t",
-                        "--threshold",
-                        type=float,
-                        help=("Threshold score for kmers to align, if no "
-                              "-tc argument provided, uses 3rd column."))
-    alignment.add_argument("-tc",
-                        "--threshold_column",
-                        type=str,
-                        help=("Column in the kmer dataframe to use for the "
-                              "rank score (Default is 3rd column)."))
-    alignment.add_argument("-r",
-                        "--range",
-                        nargs=2,
-                        type=int,
-                        default=(0, 0),
-                        help="""Core range for PWM model (1-based), default is
-                                 the whole input""")
-    alignment.add_argument("-cg",
-                        "--core_gap",
-                        nargs='*',
-                        type=int,
-                        default=None,
-                        help="""Positions within the core range (1-based,
-                        relative to core range '-r') that are not part of the
-                        kmer description of a site. Must be given with the '-r'
-                        argument""")
-    alignment.add_argument("-rc",
-                        "--range_consensus",
-                        type=str,
-                        default=None,
-                        help="""Definition of -r and -cg using the alignment of a
-                        consensus site instead. A '.' character in the
-                        consensus string indicates a -cg position.""")
+                           "--meme",
+                           action="store_true",
+                           help="Boolean flag if the model is in MEME format")
+    alignment.add_argument("-o",
+                           "--output",
+                           type=str,
+                           default=None,
+                           help="Output file location, standard output by default")
+    alignment_settings = parser.add_argument_group("Alignment Settings.")
+    alignment_settings.add_argument("-rc",
+                                    "--range_consensus",
+                                    type=str,
+                                    default=None,
+                                    help="""Representation of the orientation and spatial
+                                    position of a binding site as a string to automatically
+                                    define the advanced parameters: '-r', '-p' and  '-cg'.
+                                    Can use {A, C, G, T, N, and .} characters where {N, .}
+                                    represent wildcard positions with the '.' indicating that
+                                    the k-mers do not need to describe that position for calling
+                                    sites. Example: The string of TTCCNGGAA will find the top scoring
+                                    position in the PWM as the '-r' and define the model as
+                                    palindromic and use the '-p' flag. Using TTCC.GGAA will do
+                                    the same but define the '.' position as a core gap (-cg argument).""")
+    alignment_settings.add_argument("-g",
+                                    "--gap_limit",
+                                    type=int,
+                                    default=0,
+                                    help="""The number of allowed gaps in a k-mer. Must be
+                                    greater than or equal to zero. By default this value is
+                                    zero and aligns all non-gapped k-mers.""")
+    alignment_settings.add_argument("-t",
+                                    "--threshold",
+                                    type=float,
+                                    help="""Convienence argument to only align k-mers equal to
+                                    or above a given threshold score. By default all k-mers provided
+                                    are aligned.""")
+    alignment_settings.add_argument("-tc",
+                                    "--threshold_column",
+                                    type=str,
+                                    help="""Convienence argument to select which column to use for the
+                                    '-t' argument. By default uses the third column.""")
+    alignment_adv_settings = parser.add_argument_group("Alignment Advanced Settings")
+    alignment_adv_settings.add_argument("-p",
+                                        "--palindrome",
+                                        action="store_true",
+                                        help="""Flag for if the alignment should be in 'palindrome mode', where both
+                                        orientations for each k-mer are aligned to the model instead of choosing an
+                                        orientation based on the alignment score. This flag will override the automatic
+                                        chosen setting from the '-oi' argument if used in conjunction.""")
+    alignment_adv_settings.add_argument("-r",
+                                        "--range",
+                                        nargs=2,
+                                        type=int,
+                                        default=(0, 0),
+                                        help="""Description position range within the input PWM model (1-based),
+                                        default is the whole size of the input PWM. This argument will override the
+                                        automatic chosen setting from the '-oi' argument if used in conjunction.""")
+    alignment_adv_settings.add_argument("-cg",
+                                        "--core_gap",
+                                        nargs='*',
+                                        type=int,
+                                        default=None,
+                                        help="""Positions within the core range (1-based, relative to core range '-r')
+                                        that are not part of the kmer description of a site. Must be given with the '-r'
+                                        argument. This argument will override the automatic chosen setting from the '-oi'
+                                        argument if used in conjunction.""")
+    # Experimental setting.
+    alignment_adv_settings.add_argument("-oit", "--opt_threshold_type", type=str, default="Distance", choices=("Distance", "AtFPR"))
     return parser
 
 
 def _config_optimize_parser(parser):
     parser = _add_alignparams_to_parser(parser)
-    parser = _add_output_to_parser(parser)
     optimization = parser.add_argument_group("Optimization Parameters")
     optimization.add_argument("-c",
                               "--classify_file",
@@ -95,7 +121,7 @@ def _config_optimize_parser(parser):
                               "--fpr_threshold",
                               type=float,
                               default=0.01,
-                              help="FPR target for optimization on de bruijn data.")
+                              help="FPR target for optimization on de Bruijn sequences.")
     optimization.add_argument("-gthr",
                               "--gap_thresholds",
                               nargs='*',
@@ -107,75 +133,82 @@ def _config_optimize_parser(parser):
 
 def _config_align_compile_parser(parser):
     parser = _add_alignparams_to_parser(parser)
-    parser = _add_output_to_parser(parser)
-    parser.add_argument("-oi",
-                        "--optimize_input",
-                        type=str,
-                        default=None,
-                        help="Use parameters from an optimization report as input in addition to -a and -k.")
     return parser
 
 
 def _config_call_parser(parser):
     """Configure the arguments for the call subprogram parser."""
-    required = parser.add_argument_group("required arguments")
-    required.add_argument("-i",
-                          "--input_model",
-                          required=True,
-                          type=str,
-                          help="Input of Aligned k-mers or Compiled Solutions.")
-    required.add_argument("-f",
-                          "--fasta_file",
-                          required=True,
-                          type=str,
-                          help="Fasta file of DNA sequences")
-    parser.add_argument("-gc",
-                        "--genomic_coordinates",
-                        action="store_true",
-                        help="Parse fasta input for genomic coordinates")
-    parser = _add_output_to_parser(parser)
+    call_io = parser.add_argument_group("Input-Output Arguments")
+    call_io.add_argument("-i",
+                         "--input_model",
+                         required=True,
+                         type=str,
+                         help="Input of Aligned k-mers or Compiled Solutions.")
+    call_io.add_argument("-f",
+                         "--fasta_file",
+                         required=True,
+                         type=str,
+                         help="Fasta file of DNA sequences")
+    call_io.add_argument("-o",
+                         "--output",
+                         type=str,
+                         default=None,
+                         help="Output file location, standard output by default.")
+    call_settings = parser.add_argument_group("Settings")
+    call_settings.add_argument("-gc",
+                               "--genomic_coordinates",
+                               action="store_true",
+                               help="Parse fasta input for genomic coordinates.")
     return parser
 
 
 def _config_classify_parser(parser):
     """Configure the arguments for the classify subprogram parser."""
-    required = parser.add_argument_group("required arguments")
-    required.add_argument("-i",
-                          "--input_file",
-                          required=True,
-                          type=str,
-                          help="Input file for classification.")
-    parser.add_argument("-o",
-                        "--output",
-                        type=str,
-                        default=None,
-                        help="Output file, stdout by default.")
-    parser.add_argument("-m",
-                        "--method",
-                        type=str,
-                        choices=["kde", "z-score", "kde_z4"],
-                        default='kde',
-                        help="Classification method, default = kde.")
-    parser.add_argument("-z",
-                        "--z_scores",
-                        nargs=2,
-                        type=float,
-                        default=(3, 4),
-                        help="Z-scores to use if classifying by 'z-score'")
-    parser.add_argument("-sr",
-                        "--sequence_range",
-                        nargs=2,
-                        type=int,
-                        help="Sequence position range to use.")
-    parser.add_argument("-ln",
-                        "--ln_transform",
-                        action="store_true",
-                        help="Natural log transform the values prior to classification.")
-    parser.add_argument("-kde_p",
-                        "--kde_positive_ratio",
-                        type=float,
-                        default=1,
-                        help="Multiplier of kde negative threshold to obtain positive threshold.")
+    classify_io = parser.add_argument_group("Input-Output Arguments")
+    classify_io.add_argument("-i",
+                             "--input_file",
+                             required=True,
+                             type=str,
+                             help="""Input file for classification. Must be a tabular file of two columns where
+                             the first column is the value of the sequence and the second is the sequence itself.""")
+    classify_io.add_argument("-o",
+                             "--output",
+                             type=str,
+                             default=None,
+                             help="Output file, stdout by default.")
+    classify_settings = parser.add_argument_group("Settings")
+    classify_settings.add_argument("-m",
+                                   "--method",
+                                   type=str,
+                                   choices=["kde", "z-score", "kde_z4"],
+                                   default='kde',
+                                   help="Classification method, default = kde.")
+    classify_settings.add_argument("-z",
+                                   "--z_scores",
+                                   nargs=2,
+                                   type=float,
+                                   default=(3, 4),
+                                   help="Z-scores to use if classifying by 'z-score'")
+    classify_settings.add_argument("-kde_p",
+                                   "--kde_positive_ratio",
+                                   type=float,
+                                   default=1,
+                                   help="Multiplier of kde negative threshold to obtain positive threshold.")
+    classify_conv = parser.add_argument_group("Convienence Settings.")
+    classify_conv.add_argument("-sr",
+                               "--sequence_range",
+                               nargs=2,
+                               type=int,
+                               help="""Subsets all sequences in the input file by the given range (1-base).""")
+    classify_conv.add_argument("-ln",
+                               "--ln_transform",
+                               action="store_true",
+                               help="Natural log transform the values prior to classification.")
+
+    classify_conv.add_argument("-pv",
+                               "--positive_values_only",
+                               action="store_true",
+                               help="Convienence argument that subsets the input values for positive values only prior to classification.")
     return parser
 
 
@@ -188,15 +221,15 @@ def _cli_parser():
                                             help="Available subcommands:")
     # Align program parser definition
     align_parser = subparsers.add_parser("align",
-                                         help="Align k-mers to a model.")
+                                         help="Aligns k-mers to a model, returning an aligned k-mer file.")
     align_parser = _config_align_compile_parser(align_parser)
     # Compile program parser definition
     compile_parser = subparsers.add_parser("compile",
-                                         help="Compile k-mers into aligned consensus sites by generating all possible solutions.")
+                                           help="Compile k-mers into aligned consensus sites by generating all possible solutions.")
     compile_parser = _config_align_compile_parser(compile_parser)
     # Optimization
     optimize_parser = subparsers.add_parser("optimize",
-                                            help="Optimize alignment parameters based on de Bruijn sequence classification.")
+                                            help="Optimize alignment parameters based on de Bruijn sequence classification. Returns an optimization report file.")
     optimize_parser = _config_optimize_parser(optimize_parser)
     # Call program parser definition
     call_parser = subparsers.add_parser("callsites",
@@ -244,31 +277,49 @@ def _align_parser_validation(parser, args) -> bool:
         parser.error("-r must be specified with either -r or -rc, not both.")
     return True
 
-
-def _align_program(args):
-    parameters = _args_to_align_parameters(args)
+def _init_alignparameters_from_args(args):
     if args.optimize_input:
         opt_obj = cftf.Optimize.load_from_file(args.optimize_input)
         parameters = opt_obj.optimal_parameters
         parameters.pwm_file = args.align_model
         parameters.kmer_file = args.kmer_file
+        if args.opt_threshold_type == "Distance":
+            parameters.threshold = opt_obj.distance_based_optimal_threshold()
+        # Update the following if manually given and override
+        if args.threshold:
+            parameters.threshold = args.threshold
+        if args.threshold_column:
+            parameters.threshold_column = args.threshold_column
+        if args.palindrome:
+            parameters.palidrome = args.palindrome
+        if args.meme:
+            parameters.pwm_file_format = "MEME"
+    else:
+        parameters = _args_to_align_parameters(args)
+    return parameters
+
+
+def _align_program(args):
+    parameters = _init_alignparameters_from_args(args)
     aligned_kmers = cftf.AlignedKmers.from_parameters(parameters)
     aligned_kmers.save_alignment(args.output)
 
 
 def _compile_program(args):
-    parameters = _args_to_align_parameters(args)
-    if args.optimize_input:
-        opt_obj = cftf.Optimize.load_from_file(args.optimize_input)
-        parameters = opt_obj.optimal_parameters
-        parameters.pwm_file = args.align_model
-        parameters.kmer_file = args.kmer_file
+    parameters = _init_alignparameters_from_args(args)
     compiled_kmers = cftf.CtrlF.from_parameters(parameters)
     compiled_kmers.compile_all_solutions()
     compiled_kmers.save_compiled_sites(args.output)
 
 
 def _optimize_program(args):
+    """Optimize CtrlF-TF alginment parameters.
+
+    Optimize CtrlF-TF alignment parameters, returning
+    an optimization report file containing the performance
+    information for each set of hyperparameters attempted.
+    """
+    # Parse and validate input parameters for alignment
     parameters = _args_to_align_parameters(args)
     gap_thresholds = {}
     for idx, i in enumerate(args.gap_thresholds):
@@ -278,7 +329,7 @@ def _optimize_program(args):
                             classified_df=classified_seqs.dataframe,
                             fpr_threshold=args.fpr_threshold,
                             gap_thresholds=gap_thresholds)
-    parameters = opt_obj.optimal_parameters
+    # parameters = opt_obj.optimal_parameters
     opt_obj.save_to_file(args.output)
 
 
@@ -300,9 +351,14 @@ def _call_program(args):
 
 
 def _classify_program(args):
+    """Runs the CtrlF-TF classification task."""
+    # Read input dataframe to classify.
     input_df = pd.read_csv(args.input_file,
                            sep='\t',
                            header=None)
+    # if positive argument, subset by positive values
+    if args.positive_values_only:
+        input_df = input_df[input_df[0] >= 0].reset_index(drop=True)
     if args.sequence_range:
         string_start = args.sequence_range[0]
         string_end = args.sequence_range[1]

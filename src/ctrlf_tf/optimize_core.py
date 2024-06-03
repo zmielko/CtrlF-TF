@@ -365,3 +365,8 @@ class Optimize:
                                  sep='\t',
                                  index=False,
                                  mode='a')
+
+    def distance_based_optimal_threshold(self):
+        return ctrlf_tf.optimize_utils.distance_adjusted_threshold(self.parameter_dataframe,
+                                                                   self.tpr_fpr_dictionary,
+                                                                   self.fpr_threshold)
