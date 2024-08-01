@@ -116,7 +116,7 @@ def read_pwm_from_tabular(pwm_file: str) -> np.ndarray:
     :param pwm_file: PWM file location
     :returns: PWM as a numpy array
     """
-    pwm = pd.read_csv(pwm_file, delim_whitespace=True, header=None)
+    pwm = pd.read_csv(pwm_file, sep=r'\s+', header=None)
     pwm = pwm.sort_values(by=0)
     pwm = pwm.to_numpy()
     pwm = np.delete(pwm, 0, 1).astype("float")

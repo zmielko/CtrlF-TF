@@ -6,8 +6,7 @@ Classes:
 
 1) AlignParameters: Dataclass of parameters used to align kmers to a PWM
 2) AlignedKmers: Class that aligns kmers to a PWM model
-3) CompiledKmers: AlignedKmers child that compiles k-mers into consensus sites
-4) CtrlF: CompiledKmers child that calls sites from input sequence
+3) CtrlF: AlignedKmers child that calls sites from input sequence
 
 """
 
@@ -27,7 +26,7 @@ import ctrlf_tf.parse_utils
 import ctrlf_tf.compile_utils
 import ctrlf_tf.site_call_utils
 
-__version__ = "1.0b5"
+__version__ = "1.0b6"
 __author__ = "Zachery Mielko"
 
 
@@ -524,10 +523,33 @@ class CtrlF(AlignedKmers):
         neg_sites = ctrlf_tf.site_call_utils.site_dict_to_sitetuples(orient2, sequence, '-', self.site_span)
         return pos_sites + neg_sites
 
+    def call_sites(self,
+                   sequence: str,
+                   use_core_length_when_compiled: bool = False):
+        """Call binding sites using CtrlF-TF.
 
-    def call_sites(self, sequence: str):
+        Calls binding sites from a given sequence using the model from
+        the CtrlF object. If the CtrlF object is "Compiled", meaning that
+        all possible solutions for a given k-mer set are pre-calculated, then
+        the default is to call binding sites with the definition of the max and
+        minimum range of all precalculates aligned sites. This length is greater
+        than or equal to the length of the core and the default for calling
+        sites with a compiled model.
+
+        If the CtrlF object is not "Compiled" and using aligned k-mers to directly
+        call sites, then the definition of a site is the range of the core.
+
+        :param sequence: Input DNA sequence
+        :type sequence: str
+        :param use_compiled_core_span_definition: Use the core span when calling with a compiled model
+        :type use_compiled_core_span_definition: bool
+        :returns: A SiteTuple of called binding sites.
+        """
         if self.is_compiled:
-            return self._call_sites_with_compiled_solutions(sequence)
+            # Currently has a default argument of fixed_length of True
+            # which corresponds to the inverse.
+            return self._call_sites_with_compiled_solutions(sequence,
+                                                            not use_core_length_when_compiled)
         else:
             return self._call_sites_with_kmers(sequence)
 
@@ -535,7 +557,7 @@ class CtrlF(AlignedKmers):
                           sequence: str,
                           chromosome: str,
                           chromosome_start: int,
-                          fixed_length=True):
+                          use_core_length_when_compiled: bool = False):
         """Call sites in BED format.
 
         Given a seuqence, chromosome, and chromosome_start information, returns
@@ -549,7 +571,7 @@ class CtrlF(AlignedKmers):
         :type chromosome_start: int
         :returns: List of BedTuples
         """
-        sites = self.call_sites(sequence)
+        sites = self.call_sites(sequence, use_core_length_when_compiled)
         chromosome_end = chromosome_start + len(sequence)
         bedtuple_result = ctrlf_tf.site_call_utils.site_tuples_to_bed(sites,
                                                                       chromosome,

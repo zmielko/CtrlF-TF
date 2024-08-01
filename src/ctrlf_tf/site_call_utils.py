@@ -12,7 +12,6 @@ import networkx as nx
 import pandas as pd
 
 
-
 # Named tuple outputs
 SiteTuple = namedtuple("SiteTuple", ["start",
                                      "end",
@@ -24,9 +23,15 @@ BedTuple = namedtuple("BedTuple", ["chromosome",
                                    "name",
                                    "score",
                                    "orientation"])
+NonCompilePreprocess = namedtuple("NonCompilePreprocess", ["kmer_automata",
+                                                           "expanded_kmer_to_original_dict",
+                                                           "kmer_to_index_dict",
+                                                           "index_to_score_dict",
+                                                           "index_to_core_position_dict",
+                                                           "traversal_graph",
+                                                           "site_span"])
 
 
-# Unique for this
 def kmer_core_description(kmer: str,
                           align_position: int,
                           relative_core_position_dict: dict) \
@@ -185,11 +190,13 @@ def relative_positions_from_core(core_positions: Iterable[int]) -> dict:
         relative_core_position_dict[i] = idx
     return relative_core_position_dict
 
+
 def pad_k(kmer, align_position, left_bound, right_bound):
     """Returns k-mer strings in an aligned space."""
     left_pad = '.' * abs(left_bound - align_position)
     right_pad = '.' * abs(right_bound - (align_position + len(kmer)))
     return left_pad + kmer + right_pad
+
 
 def expand_kmer(kmer: str) -> List[str]:
     """Given a k-mer with wildcards as '.' returns all non-gapped sequences."""
@@ -207,6 +214,7 @@ def expand_kmer(kmer: str) -> List[str]:
     recurse_expand(kmer, '', 0)
     return results
 
+
 def padded_kmers_from_aligned_df(aligned_df):
     """Return padded k-mers from an aligned k-mer dataframe"""
     kmer_dataframe = aligned_df.drop_duplicates().reset_index(drop=True)
@@ -221,6 +229,7 @@ def padded_kmers_from_aligned_df(aligned_df):
         padded_kmer = pad_k(row.Kmer, row.Align_Position, left_bound, right_bound)
         padded_kmers.append(padded_kmer)
     return padded_kmers
+
 
 def create_traverse_graph_from_padded_kmers(padded_kmers):
     """Calculates all-v-all traversals in nlogn."""
@@ -245,7 +254,12 @@ def create_traverse_graph_from_padded_kmers(padded_kmers):
 
 
 def kmer_to_index_dict_from_aligned_df(aligned_kmer_df):
-    """"""
+    """Returns a nested dictionary to lookup the index of an aligned k-mer.
+
+    Given an aligned k-mer dataframe, returns a nested dectionary where the
+    first key is the k-mer and the second key is the aligned position. The
+    final returned value is the index of the key-aligned position pair.
+    """
     kmer_to_index = defaultdict(dict)
     idx = 0
     for kmer, ap in zip(aligned_kmer_df["Kmer"], aligned_kmer_df['Align_Position']):
@@ -274,7 +288,7 @@ def expanded_kmer_to_original_dict_from_aligned_df(aligned_df):
             expanded_kmer_to_kmer[i][row.Kmer] = row.Align_Position
     return expanded_kmer_to_kmer
 
-# Get index to core position dictionary
+
 def kmer_idx_to_core_position_dict_from_aligned_df(aligned_df, core_positions):
     relative_core_dict = relative_positions_from_core(core_positions)
     idx = 0
@@ -302,41 +316,57 @@ def overlapping_kmers(graph: nx.Graph, subgraph_nodes: set) -> List[nx.Graph]:
             connected_groups.append(list(i))
     return connected_groups
 
+
+def is_overlapping_solution(traversal_graph: nx.Graph,
+                            kmer_idx_to_core_position_dict: dict,
+                            kmer_idx_set: set) -> bool:
+    """Returns True if the k-mer index set contains a binding site.
+
+    If the k-mers represented in the kmer_idx_set contain a group of k-mers
+    that can be used to form a binding site, `True` is returned. Otherwise
+    `False` is returned.
+    """
+    for connected_groups in overlapping_kmers(traversal_graph, kmer_idx_set):
+        core_descriptions = [kmer_idx_to_core_position_dict[i] for i in connected_groups]
+        if ctrlf_tf.compile_utils.is_core_described(core_descriptions):
+            return True
+    return False
+
+
 def score_site_from_candidate_list(candidate_list,
                                    index_to_score_dict,
                                    traversal_graph,
                                    kmer_idx_to_core_position_dict) -> float:
-    """Determine if a candidate site is real and score if so.
-    
-    Given a list of candidate kmer indicies (variable) and information from
-    the alignment of k-mers (index_to_score_dict, traversal_graph,
-    kmer_idx_to_core_position_dict), finds the maximum k-mer score of a valid
-    solution. If there is one, returns the score. Otherwise, returns None. 
+    """Returns the score of a binding site if contained in a list of k-mer indexes.
+
+    Given a candidate list of k-mer indexes that could form a site, a traversal graph
+    representing k-mer compatibility and overlap, and dictionaries to convert a k-mer
+    index into a core position or score, the score of a binding site is returned.
+    Otherwise `None` is returned if there is no binding site possible from the list
+    of k-mer indexes.
     """
-    # List of candidate kmer indicies (equivalent to their ranks)
-    if len(candidate_list) >= 2: # If there are the minimum number of k-mers or more
+    if len(candidate_list) >= 2:
         # Sort the lists by rank in increasing order
-        candidate_list = sorted(candidate_list)
-        # Iteratively add to the set
-        kmer_idx_set = set()
-        kmer_idx_set.add(candidate_list[0])
-        for i in candidate_list[1:]:
-            kmer_idx_set.add(i)
-            # For each addition, check if there is an answer and if so return its score
-            for connected_groups in overlapping_kmers(traversal_graph, kmer_idx_set):
-                core_descriptions = [kmer_idx_to_core_position_dict[i] for i in connected_groups]
-                if ctrlf_tf.compile_utils.is_core_described(core_descriptions):
-                    return index_to_score_dict[i]
+        candidate_list.sort()
+        # Initialize search
+        found_solution = None
+        lower_idx = 0
+        upper_idx = len(candidate_list) - 1
+        while lower_idx <= upper_idx:
+            current_idx = int(lower_idx + ((upper_idx - lower_idx) / 2))
+            # Does the lower idx range count as a binding site?
+            kmer_idx_set = set(candidate_list[:current_idx+1])
+            if is_overlapping_solution(traversal_graph,
+                                       kmer_idx_to_core_position_dict,
+                                       kmer_idx_set):
+                found_solution = max(kmer_idx_set)
+                upper_idx = current_idx - 1
+            else:
+                lower_idx = current_idx + 1
+        if found_solution:
+            return index_to_score_dict[found_solution]
     return None
 
-
-NonCompilePreprocess = namedtuple("NonCompilePreprocess", ["kmer_automata",
-                                                           "expanded_kmer_to_original_dict",
-                                                           "kmer_to_index_dict",
-                                                           "index_to_score_dict",
-                                                           "index_to_core_position_dict",
-                                                           "traversal_graph",
-                                                           "site_span"])
 
 def noncompile_preprocessing_from_aligned_kmers(aligned_kmer_dataframe, core_positions):
     padded_kmers = padded_kmers_from_aligned_df(aligned_kmer_dataframe)
