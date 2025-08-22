@@ -138,28 +138,91 @@ class ClassifiedSequences:
         :type kde_positive_ratio: float
         :returns: ClassifiedDeBruijn Object
         """
+        print(f"Classifying {len(df)} sequences using {method} method...")
         df = df.rename(columns={df.columns[0]: "Values",
                                 df.columns[1]: "Sequence"})
         if ln_transform:
+            print("Applying log transformation to values...")
             df["Values"] = df["Values"].apply(lambda x: np.log(x))
         if method == "kde_z4":
+            print("Computing KDE z-score thresholds...")
             negative, positive = ctrlf_tf.threshold_utils.thresholds_kde_zscore(df["Values"])
         elif method == "z-score":
+            print(f"Computing z-score thresholds (negative: {z_negative}, positive: {z_positive})...")
             negative = ctrlf_tf.threshold_utils.threshold_from_zscore(df['Values'],
                                                      z_negative)
             positive = ctrlf_tf.threshold_utils.threshold_from_zscore(df["Values"],
                                                      z_positive)
         elif method == "kde":
+            print(f"Computing KDE thresholds (positive ratio: {kde_positive_ratio})...")
             negative, positive = ctrlf_tf.threshold_utils.threshold_from_kde(df["Values"], kde_positive_ratio)
         else:
             raise ValueError("Method must be 'kde_z4' or 'z-score'")
+        
+        print(f"Thresholds: negative={negative.value:.3f}, positive={positive.value:.3f}")
         group_tuple = ctrlf_tf.threshold_utils.classify_values(df["Values"],
                                               negative.value,
                                               positive.value)
         df["Group"] = group_tuple
         df["Sequence"] = df["Sequence"].apply(lambda x:
                                               x[sequence_start:sequence_end])
+        
+        # Count classifications
+        group_counts = df['Group'].value_counts()
+        print(f"Classification results: {group_counts.to_dict()}")
+        print(f"PBM classification completed: {len(df)} sequences ready for optimization")
         return cls(df, negative, positive)
+
+    @classmethod
+    def classify_selex_from_dataframe(cls,
+                                     sequences: list,
+                                     scores: list,
+                                     buffer_zone: float = 0.05,
+                                     sample_size: int = 100000,
+                                     sample_method: str = "stratified"):
+        """Factory method for SELEX data classification (sample only).
+        
+        Similar to PBM classify - only generates classified sequences for optimization,
+        no k-mer generation (that happens in optimize step).
+        
+        :param sequences: List of DNA sequences
+        :param scores: List of sequence scores
+        :param buffer_zone: SELEX buffer zone around zero (default: 0.05)
+        :param sample_size: Sample size for optimization
+        :param sample_method: Sampling method ("stratified" or "random")
+        :returns: ClassifiedSequences object with sampled SELEX data
+        """
+        import ctrlf_tf.selex_utils
+        import ctrlf_tf.threshold_utils
+        
+        print(f"Classifying {len(sequences)} SELEX sequences (buffer zone: {buffer_zone})...")
+        # Classify sequence scores for sampling
+        seq_groups, negative_thresh, positive_thresh = ctrlf_tf.threshold_utils.classify_selex_values(
+            scores, buffer_zone
+        )
+        
+        # Count classifications
+        group_counts = {'+': 0, '-': 0, '.': 0}
+        for group in seq_groups:
+            group_counts[group] += 1
+        print(f"Classification: positive={group_counts['+']}, negative={group_counts['-']}, ambiguous={group_counts['.']}")
+        
+        # Get optimization sample (this is the main output like PBM classify)
+        print(f"Sampling {sample_size} sequences for optimization using {sample_method} method...")
+        sample_seqs, sample_scores, sample_groups = ctrlf_tf.selex_utils.get_optimization_sample(
+            sequences, scores, list(seq_groups), sample_size, sample_method
+        )
+        print(f"Optimization sample: {len(sample_seqs)} sequences")
+        
+        # Create DataFrame in standard format for classification (no k-mers yet)
+        df = pd.DataFrame({
+            "Values": sample_scores,
+            "Sequence": sample_seqs,
+            "Group": sample_groups
+        })
+        
+        print(f"SELEX classification completed: {len(df)} sequences ready for optimization")
+        return cls(df, negative_thresh, positive_thresh)
 
     @classmethod
     def load_from_file(cls, file_path: str):
@@ -235,7 +298,9 @@ class Optimize:
                  parameter_dataframe: pd.DataFrame = None,
                  tpr_fpr_dictionary: dict = None,
                  optimal_parameters: ctrlf_tf.ctrlf_core.AlignParameters = None,
-                 gap_thresholds={0: 0.35, 1: 0.35, 2: 0.35}):
+                 gap_thresholds={0: 0.35, 1: 0.35, 2: 0.35},
+                 selex_metadata: dict = None,
+                 kmer_length: int = None):
         """Initialize Optimize class.
 
         Takes as input AlignParameters, a classified_df sequence,
@@ -273,6 +338,8 @@ class Optimize:
         self.gap_thresholds = gap_thresholds
         self.fpr_threshold = fpr_threshold
         self.version = version
+        self.selex_metadata = selex_metadata
+        self.kmer_length = kmer_length
         if parameter_dataframe is not None and tpr_fpr_dictionary:
             self.parameter_dataframe = parameter_dataframe
             self.tpr_fpr_dictionary = tpr_fpr_dictionary
@@ -289,22 +356,37 @@ class Optimize:
                                                                                             self.fpr_threshold,
                                                                                             self.gap_thresholds,
                                                                                             self.classified_df,
-                                                                                            self.init_parameters)
+                                                                                            self.init_parameters,
+                                                                                            self.kmer_length)
             self.optimal_parameters = ctrlf_tf.optimize_utils.optimal_parameters_from_df(self.parameter_dataframe, self.init_parameters)
 
 
     @classmethod
     def load_from_file(cls, file_path: str):
-        """Load an Optimize class from a saved text file."""
+        """Load an Optimize class from a saved text file with SELEX support."""
         # Read whole file as string
         with open(file_path) as file_obj:
             file_string = file_obj.read()
+        
+        # Parse SELEX metadata from header if present
+        selex_metadata = {}
+        lines = file_string.split('\n')
+        for line in lines:
+            if line.startswith('#SELEX'):
+                key_value = line[1:].split(': ', 1)
+                if len(key_value) == 2:
+                    key = key_value[0].replace('SELEX ', '').lower().replace(' ', '_')
+                    selex_metadata[key] = key_value[1]
+        
         # Seperate into groups
         meta_data_string, dataframe_strings = file_string.split("#Parameter DataFrame:\n")
         fpr_string, init_params_string = meta_data_string.split("#Initial Parameters:")
         # Read init params
         init_parameters = ctrlf_tf.ctrlf_core.AlignParameters.from_str_iterable(init_params_string.strip().split('\n'))
-        fpr_threshold = float(fpr_string.split(': ')[1].strip())
+        
+        # Extract FPR threshold from first line (handles both PBM and SELEX formats)
+        fpr_line = fpr_string.split('\n')[0]
+        fpr_threshold = float(fpr_line.split(': ')[1].strip())
         parameters_string, dataframe_strings = \
             dataframe_strings.split("#Classified_Dataframe:\n")
         classified_df_string, tpr_fpr_string = \
@@ -321,12 +403,17 @@ class Optimize:
         for key, dataframe in tpr_fpr_dataframe.groupby(by="ID"):
             tpr_fpr_dictionary[key] = dataframe
         # Return class instance
-        return cls(align_parameters=init_parameters,
-                   classified_df=classified_dataframe,
-                   fpr_threshold=fpr_threshold,
-                   parameter_dataframe=parameter_dataframe,
-                   tpr_fpr_dictionary=tpr_fpr_dictionary,
-                   optimal_parameters=ctrlf_tf.optimize_utils.optimal_parameters_from_df(parameter_dataframe, init_parameters))
+        instance = cls(align_parameters=init_parameters,
+                       classified_df=classified_dataframe,
+                       fpr_threshold=fpr_threshold,
+                       parameter_dataframe=parameter_dataframe,
+                       tpr_fpr_dictionary=tpr_fpr_dictionary,
+                       optimal_parameters=ctrlf_tf.optimize_utils.optimal_parameters_from_df(parameter_dataframe, init_parameters))
+        
+        if selex_metadata:
+            instance.selex_metadata = selex_metadata
+        
+        return instance
 
     def save_to_file(self, file_path: str):
         """Save optimized parameter information to a text file.
@@ -344,7 +431,16 @@ class Optimize:
         :param file_path: File path to save the attribute information
         """
         with open(file_path, 'w') as file_obj:
-            file_obj.write(f"#FPR threshold: {self.fpr_threshold}\n#Initial Parameters:\n")
+            file_obj.write(f"#FPR threshold: {self.fpr_threshold}\n")
+            
+            # Add SELEX preprocessing metadata if present
+            if hasattr(self, 'selex_metadata') and self.selex_metadata:
+                file_obj.write(f"#SELEX scoring method: {self.selex_metadata.get('scoring_method', 'N/A')}\n")
+                file_obj.write(f"#SELEX buffer zone: {self.selex_metadata.get('buffer_zone', 'N/A')}\n")
+                file_obj.write(f"#SELEX sample size: {self.selex_metadata.get('sample_size', 'N/A')}\n")
+                file_obj.write(f"#SELEX sample method: {self.selex_metadata.get('sample_method', 'N/A')}\n")
+            
+            file_obj.write("#Initial Parameters:\n")
         self.init_parameters.save_parameters(file_path, mode='a')
         with open(file_path, 'a') as file_obj:
             file_obj.write("#Parameter DataFrame:\n")

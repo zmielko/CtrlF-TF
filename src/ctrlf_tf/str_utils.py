@@ -132,7 +132,7 @@ def read_kmer_data(kmer_file: str,
     :param gap_limit: Maximum number of gaps, must be 0 or positive integer
     """
     kmer_df = pd.read_csv(kmer_file, sep='\t')
-    if threshold:
+    if threshold is not None:
         if threshold_column not in kmer_df.columns:
             raise ValueError(("Threshold column not found in"
                              f"{kmer_df.columns}"))

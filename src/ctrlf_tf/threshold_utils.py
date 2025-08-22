@@ -165,3 +165,29 @@ def classify_values(values: Iterable[float],
             classification_list.append('.')
     classification_tuple = tuple(classification_list)
     return classification_tuple
+
+
+def classify_selex_values(values: Iterable[float], 
+                         buffer_zone: float = 0.05) -> Tuple[Tuple[str], ThresholdTuple, ThresholdTuple]:
+    """Classify SELEX values based on buffer zone around zero.
+    
+    SELEX-specific classification where values > buffer_zone are positive,
+    values < -buffer_zone are negative, and values in between are ambiguous.
+    
+    :param values: Sequence scores to classify
+    :param buffer_zone: Buffer zone around zero (default: 0.05)  
+    :returns: Tuple of (classifications, negative_threshold, positive_threshold)
+    """
+    classification_list = []
+    for value in values:
+        if value > buffer_zone:
+            classification_list.append('+')
+        elif value < -buffer_zone:
+            classification_list.append('-')
+        else:
+            classification_list.append('.')
+    
+    negative_threshold = ThresholdTuple("SELEX Buffer Zone", -buffer_zone)
+    positive_threshold = ThresholdTuple("SELEX Buffer Zone", buffer_zone)
+    
+    return tuple(classification_list), negative_threshold, positive_threshold

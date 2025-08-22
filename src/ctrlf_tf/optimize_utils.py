@@ -125,8 +125,9 @@ def fpr_score_threshold(iterationtuple, fpr_threshold):
 
 
 def iterations_to_parameter_dataframe(iterations: Iterable[IterationTuple],
-                                      fpr_threshold: float) -> pd.DataFrame:
-    """Convert an iterable of IterationTuples to a dataframe."""
+                                      fpr_threshold: float,
+                                      kmer_length: int = None) -> pd.DataFrame:
+    """Convert an iterable of IterationTuples to a dataframe with SELEX support."""
     tuple_list = []
     for index, i in enumerate(iterations):
         score_threshold = fpr_score_threshold(i, fpr_threshold)
@@ -136,7 +137,8 @@ def iterations_to_parameter_dataframe(iterations: Iterable[IterationTuple],
                            score_threshold,
                            i.start,
                            i.end,
-                           i.model_gaps))
+                           i.model_gaps,
+                           kmer_length))
     parameter_dataframe = pd.DataFrame(tuple_list)
     rename_dict = {0: "ID",
                    1: "Kmer_Gap_Limit",
@@ -144,7 +146,8 @@ def iterations_to_parameter_dataframe(iterations: Iterable[IterationTuple],
                    3: "Score_Threshold",
                    4: "Core_Start",
                    5: "Core_End",
-                   6: "Core_Gaps"}
+                   6: "Core_Gaps",
+                   7: "Kmer_Length"}
     parameter_dataframe = parameter_dataframe.rename(columns=rename_dict)
     return parameter_dataframe
 
@@ -234,8 +237,8 @@ def tpr_fpr_df_from_parameters(parameters, classified_df) -> float:
     """
     try:
         ctrlf_obj = ctrlf_tf.ctrlf_core.CtrlF.from_parameters(parameters)
-    except:
-        print("Parameters could not be compiled", parameters, file=sys.stderr)
+    except Exception as e:
+        print(f"Parameters could not be compiled: {parameters}, Error: {e}", file=sys.stderr)
         raise
     #noncompiled_preprocess = ctrlf_tf.site_call_utils.noncompile_preprocessing_from_aligned_kmers(ak_obj.aligned_kmer_dataframe, ak_obj.core_positions)
     #is_palindrome = parameters.palindrome
@@ -385,10 +388,12 @@ def optimize_gap_parameters(gap_limit: int,
                             classified_df: pd.DataFrame,
                             init_parameters: ctrlf_tf.ctrlf_core.AlignParameters) -> IterationTuple:
     """Optimize for a single gap limit parameter"""
+    print(f"  Optimizing gap limit {gap_limit} (threshold: {threshold_value:.3f})...")
     # Determine initial AUROC and parameters
     gap_alignparams = copy.deepcopy(init_parameters)
     gap_alignparams.gap_limit = gap_limit
     gap_alignparams.threshold = threshold_value
+    print(f"    Evaluating initial parameters (core: {gap_alignparams.core_start}-{gap_alignparams.core_end})...")
     initial_tpr_fpr_df = tpr_fpr_df_from_parameters(gap_alignparams, classified_df.copy(deep=True))
     initial_auroc = auroc_from_tpr_fpr(initial_tpr_fpr_df, fpr_threshold)
     current_iteration = IterationTuple("Initial",
@@ -404,15 +409,23 @@ def optimize_gap_parameters(gap_limit: int,
     right = 0
     # Keep extending the core model until AUROC does not increase
     not_optimal = True
+    iteration_count = 0
     while not_optimal:
-        iteration_list += local_optimization_search(gap_alignparams, left, right, seen_parameters, classified_df.copy(deep=True), fpr_threshold)
+        iteration_count += 1
+        print(f"    Iteration {iteration_count}: Testing parameter extensions...")
+        new_iterations = local_optimization_search(gap_alignparams, left, right, seen_parameters, classified_df.copy(deep=True), fpr_threshold)
+        if new_iterations:
+            print(f"      Tested {len(new_iterations)} parameter combinations")
+        iteration_list += new_iterations
         best_iteration = find_best_iteration(iteration_list)
         if best_iteration == current_iteration:
+            print(f"    Converged after {iteration_count} iterations (best pAUROC: {best_iteration.auroc:.4f})")
             not_optimal = False
         else:
             current_iteration = best_iteration
             left = current_iteration.direction.count('L')
             right = current_iteration.direction.count("R")
+            print(f"      Found better parameters: {current_iteration.direction} (pAUROC: {current_iteration.auroc:.4f})")
     return iteration_list
 
 
@@ -420,8 +433,15 @@ def optimize_parameters(gap_limit: int,
                         fpr_threshold: float,
                         threshold_value_dict: dict,
                         classified_df: pd.DataFrame,
-                        init_parameters: ctrlf_tf.ctrlf_core.AlignParameters):
-    """Optimize parameters over multiple gaps."""
+                        init_parameters: ctrlf_tf.ctrlf_core.AlignParameters,
+                        kmer_length: int = None):
+    """Optimize parameters over multiple gaps with SELEX support."""
+    print(f"Optimizing parameters across {gap_limit + 1} gap limits...")
+    print(f"  FPR threshold: {fpr_threshold}")
+    print(f"  Classified sequences: {len(classified_df)}")
+    if kmer_length:
+        print(f"  K-mer length: {kmer_length}")
+    
     all_iterations = []
     # For each gap choice
     for gap in range(gap_limit + 1):
@@ -431,14 +451,24 @@ def optimize_parameters(gap_limit: int,
                                                   classified_df,
                                                   init_parameters)
     all_iterations = tuple(all_iterations)
-    parameter_dataframe = iterations_to_parameter_dataframe(all_iterations, fpr_threshold)
+    print(f"Completed optimization with {len(all_iterations)} parameter combinations tested")
+    parameter_dataframe = iterations_to_parameter_dataframe(all_iterations, fpr_threshold, kmer_length)
     tpr_fpr_dictionary = iterations_to_tpr_fpr_dictionary(all_iterations)
+    
+    # Find and report best parameters
+    best_idx = parameter_dataframe["pAUROC"].idxmax()
+    best_auroc = parameter_dataframe.iloc[best_idx]["pAUROC"]
+    best_gap = parameter_dataframe.iloc[best_idx]["Kmer_Gap_Limit"]
+    best_core_start = parameter_dataframe.iloc[best_idx]["Core_Start"]
+    best_core_end = parameter_dataframe.iloc[best_idx]["Core_End"]
+    print(f"Best parameters: gap_limit={best_gap}, core={best_core_start}-{best_core_end}, pAUROC={best_auroc:.4f}")
+    
     return (parameter_dataframe, tpr_fpr_dictionary)
 
 
 def optimal_parameters_from_df(parameter_dataframe: pd.DataFrame,
                                init_params: ctrlf_tf.ctrlf_core.AlignParameters) -> ctrlf_tf.ctrlf_core.AlignParameters:
-    """Return optimal AlignParameters from a parameter dataframe."""
+    """Return optimal AlignParameters from a parameter dataframe with SELEX support."""
     # Find the row with the best performance
     index_max_auroc = parameter_dataframe["pAUROC"].idxmax()
     # Get the information from that row
@@ -447,6 +477,12 @@ def optimal_parameters_from_df(parameter_dataframe: pd.DataFrame,
     core_gaps = parameter_dataframe.iloc[index_max_auroc]["Core_Gaps"]
     gap_limit = parameter_dataframe.iloc[index_max_auroc]["Kmer_Gap_Limit"]
     threshold = parameter_dataframe.iloc[index_max_auroc]["Score_Threshold"]
+    
+    # Extract optimal k-mer length for SELEX (if present)
+    optimal_kmer_length = None
+    if "Kmer_Length" in parameter_dataframe.columns:
+        optimal_kmer_length = parameter_dataframe.iloc[index_max_auroc]["Kmer_Length"]
+    
     # Update a copy of the initial parameters and return it
     result = copy.deepcopy(init_params)
     result.range_consensus = None
@@ -455,6 +491,11 @@ def optimal_parameters_from_df(parameter_dataframe: pd.DataFrame,
     result.core_gaps = core_gaps
     result.gap_limit = gap_limit
     result.threshold = threshold
+    
+    # Store optimal k-mer length as custom attribute for SELEX
+    if optimal_kmer_length is not None:
+        result.optimal_kmer_length = optimal_kmer_length
+    
     return result
 
 
