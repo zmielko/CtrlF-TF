@@ -109,6 +109,9 @@ def meta_tpr_fpr_dataframe(tpr_fpr_dictionary):
     for key in tpr_fpr_dictionary:
         dataframe = tpr_fpr_dictionary[key].copy()
         dataframe["ID"] = key
+        # Reorder columns to put ID first
+        cols = ['ID'] + [col for col in dataframe.columns if col != 'ID']
+        dataframe = dataframe[cols]
         dataframes.append(dataframe)
     meta_dataframe = pd.concat(dataframes)
     return meta_dataframe
@@ -164,7 +167,14 @@ def iterations_to_tpr_fpr_dictionary(iterations) -> dict:
     """
     tpr_fpr_dictionary = {}
     for index, i in enumerate(iterations):
-        tpr_fpr_dictionary[index] = i.tpr_fpr_dataframe
+        dataframe = i.tpr_fpr_dataframe.copy()
+        # Add ID column if it doesn't exist (for SELEX compatibility)
+        if 'ID' not in dataframe.columns:
+            dataframe['ID'] = index
+            # Reorder columns to put ID first
+            cols = ['ID'] + [col for col in dataframe.columns if col != 'ID']
+            dataframe = dataframe[cols]
+        tpr_fpr_dictionary[index] = dataframe
     return tpr_fpr_dictionary
 
 

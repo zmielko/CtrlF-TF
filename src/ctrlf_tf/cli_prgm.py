@@ -368,30 +368,46 @@ def _init_alignparameters_from_args(args):
         parameters = opt_obj.optimal_parameters
         parameters.pwm_file = args.align_model
         
-        # Handle SELEX k-mer file selection automatically
-        if hasattr(parameters, 'optimal_kmer_length') and hasattr(opt_obj, 'selex_metadata'):
-            # This is SELEX optimization output - auto-select k-mer file
-            if args.kmer_file:
-                # User provided k-mer file - use it (manual override)
-                parameters.kmer_file = args.kmer_file
-            else:
-                # Auto-generate k-mer file path based on optimal length
-                import os
-                optimization_dir = os.path.dirname(args.optimize_input)
-                base_name = os.path.splitext(os.path.basename(args.optimize_input))[0]
-                optimal_kmer_file = os.path.join(optimization_dir, f"{base_name}_kmers_k{parameters.optimal_kmer_length}.txt")
-                
-                if os.path.exists(optimal_kmer_file):
-                    parameters.kmer_file = optimal_kmer_file
-                    print(f"Auto-selected optimal k-mer file: {optimal_kmer_file} (k={parameters.optimal_kmer_length})")
-                else:
-                    raise FileNotFoundError(f"Expected k-mer file not found: {optimal_kmer_file}. "
-                                          f"Please provide k-mer file with --kmer_file (-k)")
-        else:
-            # PBM optimization or manual k-mer file required
-            if not args.kmer_file:
-                raise ValueError("--kmer_file (-k) is required when using PBM optimization output")
+        # Handle k-mer file selection automatically for both PBM and SELEX
+        if args.kmer_file:
+            # User provided k-mer file - use it (manual override)
             parameters.kmer_file = args.kmer_file
+        else:
+            # Auto-detect k-mer file from optimization output
+            best_kmer_file = None
+            
+            # Parse optimization file for best k-mer file path
+            with open(args.optimize_input, 'r') as f:
+                for line in f:
+                    if line.startswith('#Best K-mer File:'):
+                        best_kmer_file = line.split(': ', 1)[1].strip()
+                        break
+            
+            if best_kmer_file:
+                import os
+                if os.path.exists(best_kmer_file):
+                    parameters.kmer_file = best_kmer_file
+                    print(f"Auto-selected k-mer file from optimization: {best_kmer_file}")
+                else:
+                    raise FileNotFoundError(f"K-mer file specified in optimization not found: {best_kmer_file}")
+            else:
+                # Fallback for older optimization files without best k-mer file path
+                if hasattr(parameters, 'optimal_kmer_length') and hasattr(opt_obj, 'selex_metadata'):
+                    # SELEX fallback - auto-generate path
+                    import os
+                    optimization_dir = os.path.dirname(args.optimize_input)
+                    base_name = os.path.splitext(os.path.basename(args.optimize_input))[0]
+                    optimal_kmer_file = os.path.join(optimization_dir, f"{base_name}_kmers_k{parameters.optimal_kmer_length}.txt")
+                    
+                    if os.path.exists(optimal_kmer_file):
+                        parameters.kmer_file = optimal_kmer_file
+                        print(f"Auto-selected optimal k-mer file: {optimal_kmer_file} (k={parameters.optimal_kmer_length})")
+                    else:
+                        raise FileNotFoundError(f"Expected k-mer file not found: {optimal_kmer_file}. "
+                                              f"Please provide k-mer file with --kmer_file (-k)")
+                else:
+                    # PBM or unrecognized format - require manual specification
+                    raise ValueError("--kmer_file (-k) is required when k-mer file cannot be auto-detected from optimization output")
             
         # Apply other parameter overrides
         if args.opt_threshold_type == "Distance":
@@ -459,6 +475,7 @@ def _save_combined_selex_optimization(output_file: str, all_opt_objs: dict,
         best_entry = max(performance_summary, key=lambda x: x['performance'])
         file_obj.write(f"#Best K-mer Length: {best_entry['k_length']} "
                       f"({best_entry['metric_name']} = {best_entry['performance']:.6f})\n")
+        file_obj.write(f"#Best K-mer File: {best_entry['kmer_file']}\n")
         
         # Write initial parameters from best optimization
         file_obj.write("#Initial Parameters:\n")

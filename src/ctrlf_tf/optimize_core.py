@@ -387,10 +387,26 @@ class Optimize:
         # Extract FPR threshold from first line (handles both PBM and SELEX formats)
         fpr_line = fpr_string.split('\n')[0]
         fpr_threshold = float(fpr_line.split(': ')[1].strip())
+        def parse_section_until_next_header(content):
+            """Parse section content until the next header (line starting with #)."""
+            lines = content.split('\n')
+            data_lines = []
+            for line in lines:
+                if line.startswith('#'):
+                    break
+                data_lines.append(line)
+            return '\n'.join(data_lines)
+        
         parameters_string, dataframe_strings = \
             dataframe_strings.split("#Classified_Dataframe:\n")
-        classified_df_string, tpr_fpr_string = \
+        classified_df_string, tpr_fpr_full_string = \
             dataframe_strings.split("#TPR_FPR_Dataframe:\n")
+        
+        # Parse each section robustly by stopping at next header
+        parameters_string = parse_section_until_next_header(parameters_string)
+        classified_df_string = parse_section_until_next_header(classified_df_string)
+        tpr_fpr_string = parse_section_until_next_header(tpr_fpr_full_string)
+        
         # Parse classified debruijn and parameter dataframes
         classified_dataframe = pd.read_csv(StringIO(classified_df_string), sep='\t')
         parameter_dataframe = pd.read_csv(StringIO(parameters_string),
