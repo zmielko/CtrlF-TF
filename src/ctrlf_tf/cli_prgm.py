@@ -155,8 +155,8 @@ def _config_optimize_parser(parser):
                             help="HT-SELEX input file with sequence and score columns")
     selex_group.add_argument("--buffer_zone",
                             type=float,
-                            default=0.1,
-                            help="Classification buffer zone around zero. Scores > buffer_zone = positive, < -buffer_zone = negative (default: 0.1)")
+                            default=0.05,
+                            help="Classification buffer zone around zero. Scores > buffer_zone = positive, < -buffer_zone = negative (default: 0.05)")
     selex_group.add_argument("--kmer_length_range",
                             type=str,
                             default="7-10",
@@ -172,7 +172,7 @@ def _config_optimize_parser(parser):
                             help="Sample size for optimization (default: 100000)")
     selex_group.add_argument("--sample_method",
                             type=str,
-                            choices=["balanced", "stratified", "random"],
+                            choices=["balanced", "random"],
                             default="balanced",
                             help="Sampling method (default: balanced)")
     selex_group.add_argument("--kmer_threshold",
@@ -281,14 +281,14 @@ def _config_classify_parser(parser):
     selex_settings.add_argument("--buffer_zone",
                                type=float,
                                default=0.05,
-                               help="Classification buffer zone around zero. Scores > buffer_zone = positive, < -buffer_zone = negative (default: 0.1)")
+                               help="Classification buffer zone around zero. Scores > buffer_zone = positive, < -buffer_zone = negative (default: 0.05)")
     selex_settings.add_argument("--sample_size",
                                type=int,
                                default=100000,
                                help="Sample size for classification (default: 100000)")
     selex_settings.add_argument("--sample_method",
                                type=str,
-                               choices=["balanced", "stratified", "random"],
+                               choices=["balanced", "random"],
                                default="balanced",
                                help="Sampling method (default: balanced)")
     return parser

@@ -179,7 +179,7 @@ class ClassifiedSequences:
                                      scores: list,
                                      buffer_zone: float = 0.05,
                                      sample_size: int = 100000,
-                                     sample_method: str = "stratified"):
+                                     sample_method: str = "balanced"):
         """Factory method for SELEX data classification (sample only).
         
         Similar to PBM classify - only generates classified sequences for optimization,
@@ -189,7 +189,7 @@ class ClassifiedSequences:
         :param scores: List of sequence scores
         :param buffer_zone: SELEX buffer zone around zero (default: 0.05)
         :param sample_size: Sample size for optimization
-        :param sample_method: Sampling method ("stratified" or "random")
+        :param sample_method: Sampling method ("balanced" or "random")
         :returns: ClassifiedSequences object with sampled SELEX data
         """
         import ctrlf_tf.selex_utils

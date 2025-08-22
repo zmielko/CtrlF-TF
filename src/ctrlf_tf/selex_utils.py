@@ -61,10 +61,10 @@ def generate_kmers_from_sequences(sequences: List[str],
     return pd.DataFrame(kmer_data, columns=['kmer', 'rev_comp', 'score'])
 
 
-def stratified_sample(sequences: List[str], 
-                     scores: List[float], 
-                     groups: List[str], 
-                     sample_size: int) -> Tuple[List[str], List[float], List[str]]:
+def balanced_sample(sequences: List[str], 
+                   scores: List[float], 
+                   groups: List[str], 
+                   sample_size: int) -> Tuple[List[str], List[float], List[str]]:
     """Balanced sampling for optimization with fixed negative minimum.
     
     Logic:
@@ -123,42 +123,6 @@ def stratified_sample(sequences: List[str],
     return sampled_sequences, sampled_scores, sampled_groups
 
 
-def _legacy_stratified_sample(sequences: List[str], 
-                             scores: List[float], 
-                             groups: List[str], 
-                             sample_size: int) -> Tuple[List[str], List[float], List[str]]:
-    """Legacy stratified sampling maintaining group proportions.
-    
-    :param sequences: List of sequences
-    :param scores: List of scores
-    :param groups: List of group classifications (+/-/.)
-    :param sample_size: Target sample size
-    :returns: Tuple of (sampled_sequences, sampled_scores, sampled_groups)
-    """
-    # Group indices by classification
-    group_indices = defaultdict(list)
-    for i, group in enumerate(groups):
-        group_indices[group].append(i)
-    
-    # Calculate proportional sample sizes
-    total = len(sequences)
-    sampled_indices = []
-    
-    for group, indices in group_indices.items():
-        group_proportion = len(indices) / total
-        group_sample_size = max(1, int(sample_size * group_proportion))
-        
-        if len(indices) <= group_sample_size:
-            sampled_indices.extend(indices)
-        else:
-            sampled_indices.extend(random.sample(indices, group_sample_size))
-    
-    # Extract sampled data
-    sampled_sequences = [sequences[i] for i in sampled_indices]
-    sampled_scores = [scores[i] for i in sampled_indices]
-    sampled_groups = [groups[i] for i in sampled_indices]
-    
-    return sampled_sequences, sampled_scores, sampled_groups
 
 
 def get_optimization_sample(sequences: List[str], 
@@ -176,7 +140,7 @@ def get_optimization_sample(sequences: List[str],
     :param scores: All scores
     :param groups: All group classifications  
     :param sample_size: Target sample size for balanced approach (default: 100000)
-    :param sample_method: Sampling method ("balanced", "stratified", or "random")
+    :param sample_method: Sampling method ("balanced" or "random")
     :returns: Tuple of (sample_sequences, sample_scores, sample_groups)
     """
     # Count positive and negative sequences
@@ -192,11 +156,8 @@ def get_optimization_sample(sequences: List[str],
     
     # Sample subset for optimization
     if sample_method == "balanced":
-        return stratified_sample(sequences, scores, groups, sample_size)
-    elif sample_method == "stratified":
-        # Legacy proportional sampling (kept for compatibility)
-        return _legacy_stratified_sample(sequences, scores, groups, sample_size)
-    else:
+        return balanced_sample(sequences, scores, groups, sample_size)
+    else:  # random
         # Simple random sampling
         indices = random.sample(range(total_sequences), min(sample_size, total_sequences))
         sampled_sequences = [sequences[i] for i in indices]
