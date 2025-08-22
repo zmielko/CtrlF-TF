@@ -186,7 +186,7 @@ def _config_optimize_parser(parser):
     selex_group.add_argument("--keep_all_kmers",
                             action="store_true",
                             default=False,
-                            help="Keep all generated k-mer files. Default: False (auto-cleanup, only optimal k-mer file + _best.txt remain)")
+                            help="Keep all generated k-mer files. Default: False (auto-cleanup, only optimal k-mer file remains)")
     return parser
 
 
@@ -696,15 +696,11 @@ def _optimize_program(args):
                 best_kmer_file = kmer_output
                 best_opt_obj = opt_obj  # Keep the best optimization object
         
-        # Save the best optimization result and k-mer file (consistent with PBM workflow)
+        # Clean up non-optimal k-mer files unless --keep_all_kmers is specified
         if best_kmer_file and best_opt_obj is not None:
-            final_kmer_output = f"{base_output}_kmers_best.txt"
-            import shutil
-            shutil.copy(best_kmer_file, final_kmer_output)
             print(f"Best k-mer length: {best_k_length} ({metric_name} = {best_performance:.4f})")
-            print(f"Saved best k-mer file: {final_kmer_output}")
+            print(f"Optimal k-mer file: {best_kmer_file}")
             
-            # Clean up non-optimal k-mer files unless --keep_all_kmers is specified
             if args.keep_all_kmers:
                 print(f"Kept all k-mer files: {', '.join([f'k{k}' for k in kmer_files.keys()])}")
             else:
@@ -724,7 +720,7 @@ def _optimize_program(args):
                 if cleaned_files:
                     print(f"Cleaned up non-optimal k-mer files: {', '.join(cleaned_files)}")
                 if kept_files:
-                    print(f"Kept optimal k-mer file: {', '.join(kept_files)} (also saved as _kmers_best.txt)")
+                    print(f"Kept optimal k-mer file: {', '.join(kept_files)}")
             
             # Save combined optimization results for all k-mer lengths
             _save_combined_selex_optimization(args.output, all_opt_objs, kmer_performance_summary, best_opt_obj)
