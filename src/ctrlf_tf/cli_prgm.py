@@ -187,6 +187,14 @@ def _config_optimize_parser(parser):
                             action="store_true",
                             default=False,
                             help="Keep all generated k-mer files. Default: False (auto-cleanup, only optimal k-mer file remains)")
+    selex_group.add_argument("--use_kde_threshold",
+                            action="store_true",
+                            default=False,
+                            help="Use KDE (Kernel Density Estimation) to automatically determine k-mer score threshold instead of fixed --kmer_threshold")
+    selex_group.add_argument("--kde_positive_ratio",
+                            type=float,
+                            default=1.0,
+                            help="Multiplier for KDE threshold calculation (default: 1.0)")
     return parser
 
 
@@ -560,8 +568,13 @@ def _optimize_program(args):
         if not args.input_file:
             raise ValueError("SELEX optimization requires --input_file (-i) parameter (raw sequences + scores)")
         
+        # Handle KDE vs fixed threshold
+        if args.use_kde_threshold and args.kmer_threshold != 0.0:
+            print("Warning: Both --use_kde_threshold and --kmer_threshold specified.")
+            print("         Using KDE threshold (ignoring fixed --kmer_threshold)")
+        
         # Set SELEX-specific defaults: use single threshold since only gap=0 is used
-        if args.kmer_threshold == 0.0:  # Default value, user didn't override
+        if not args.use_kde_threshold and args.kmer_threshold == 0.0:  # Default value, user didn't override
             args.kmer_threshold = 0.0  # Keep permissive default for SELEX
         # For SELEX, use kmer_threshold as the single gap threshold (gap=0 only)
         args.gap_thresholds = [args.kmer_threshold]  # Single threshold for gap=0
@@ -595,6 +608,27 @@ def _optimize_program(args):
                 sequences, scores, k_length, args.scoring_method
             )
             
+            # Apply KDE threshold if requested
+            if args.use_kde_threshold:
+                print(f"Applying KDE threshold to k={k_length} k-mers...")
+                kde_threshold = ctrlf_tf.selex_utils.determine_kde_threshold(
+                    kmer_df['score'].tolist(), args.kde_positive_ratio
+                )
+                # Filter k-mers based on KDE threshold
+                original_count = len(kmer_df)
+                kmer_df = kmer_df[kmer_df['score'] >= kde_threshold]
+                print(f"KDE filtering: {original_count} -> {len(kmer_df)} k-mers (threshold: {kde_threshold:.6f})")
+                
+                # Update the threshold for optimization stage
+                effective_threshold = kde_threshold
+            else:
+                # Use fixed threshold
+                if args.kmer_threshold != 0.0:
+                    original_count = len(kmer_df)
+                    kmer_df = kmer_df[kmer_df['score'] >= args.kmer_threshold]
+                    print(f"Fixed threshold filtering: {original_count} -> {len(kmer_df)} k-mers (threshold: {args.kmer_threshold})")
+                effective_threshold = args.kmer_threshold
+            
             # Save k-mer file for this length
             kmer_output = f"{base_output}_kmers_k{k_length}.txt"
             kmer_export_df = pd.DataFrame({
@@ -605,6 +639,11 @@ def _optimize_program(args):
             kmer_export_df.to_csv(kmer_output, sep='\t', index=False, header=True)
             kmer_files[k_length] = kmer_output
             print(f"Saved {len(kmer_df)} k-mers to {kmer_output}")
+            
+            # Store the effective threshold for use in optimization
+            if not hasattr(args, '_effective_thresholds'):
+                args._effective_thresholds = {}
+            args._effective_thresholds[k_length] = effective_threshold
         
         # Stage 2: Optimize parameters using pre-generated k-mer files  
         print("\nSTAGE 2: Optimizing parameters for each k-length...")
@@ -620,7 +659,8 @@ def _optimize_program(args):
             parameters.kmer_file = kmer_output
             parameters.gap_limit = 0  # Force ungapped for SELEX
             # Set SELEX-specific threshold parameters
-            parameters.threshold = args.kmer_threshold
+            effective_threshold = args._effective_thresholds.get(k_length, args.kmer_threshold)
+            parameters.threshold = effective_threshold
             parameters.threshold_column = args.kmer_threshold_column
             
             # Sample classified sequences for faster optimization (parameter testing only)
@@ -632,14 +672,17 @@ def _optimize_program(args):
                 sampled_classified_df = classified_seqs.dataframe
             
             # Run optimization for this k-length (SELEX ungapped, so simplified gap_thresholds)
-            gap_thresholds = {0: args.kmer_threshold}  # Single threshold for gap=0 only
+            gap_thresholds = {0: effective_threshold}  # Single threshold for gap=0 only
             
             # Create SELEX metadata for this optimization
             selex_metadata = {
                 'scoring_method': args.scoring_method,
                 'buffer_zone': args.buffer_zone,
                 'sample_size': args.sample_size,
-                'sample_method': args.sample_method
+                'sample_method': args.sample_method,
+                'use_kde_threshold': args.use_kde_threshold,
+                'kde_positive_ratio': args.kde_positive_ratio if args.use_kde_threshold else None,
+                'effective_threshold': effective_threshold
             }
                 
             opt_obj = cftf.Optimize(align_parameters=parameters,

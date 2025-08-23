@@ -192,4 +192,58 @@ def smart_median(scores: List[float]) -> float:
         return np.median(scores)
 
 
+def determine_kde_threshold(kmer_scores: List[float], 
+                           positive_ratio: float = 1.0) -> float:
+    """Determine optimal k-mer threshold using KDE analysis.
+    
+    Applies the same KDE method used in PBM classify workflow to find
+    an optimal threshold for k-mer score filtering in SELEX data.
+    
+    :param kmer_scores: List of k-mer scores to analyze
+    :param positive_ratio: Multiplier for threshold calculation
+    :returns: Optimal k-mer score threshold
+    """
+    import ctrlf_tf.threshold_utils
+    
+    # Validate input
+    if not kmer_scores:
+        raise ValueError("No k-mer scores provided for KDE analysis")
+    
+    if len(kmer_scores) < 10:
+        print(f"Warning: Only {len(kmer_scores)} k-mer scores available for KDE analysis")
+        print("         KDE works best with larger datasets")
+    
+    # Convert to numpy array and remove any NaN values
+    import numpy as np
+    kmer_scores_clean = [score for score in kmer_scores if not np.isnan(score)]
+    
+    if len(kmer_scores_clean) != len(kmer_scores):
+        print(f"Warning: Removed {len(kmer_scores) - len(kmer_scores_clean)} NaN values from k-mer scores")
+    
+    if not kmer_scores_clean:
+        raise ValueError("All k-mer scores are NaN")
+    
+    # Show score distribution info
+    min_score = min(kmer_scores_clean)
+    max_score = max(kmer_scores_clean)
+    mean_score = np.mean(kmer_scores_clean)
+    print(f"K-mer score distribution: min={min_score:.4f}, max={max_score:.4f}, mean={mean_score:.4f}")
+    
+    # Use the same KDE threshold method as PBM classify
+    negative_threshold, positive_threshold = ctrlf_tf.threshold_utils.threshold_from_kde(
+        kmer_scores_clean, positive_ratio
+    )
+    
+    # For k-mer filtering, we want a single threshold
+    # Use the negative threshold as it represents the separation point
+    kde_threshold = negative_threshold.value
+    
+    print(f"KDE analysis on {len(kmer_scores_clean)} k-mer scores:")
+    print(f"  Determined threshold: {kde_threshold:.6f}")
+    print(f"  Method: {negative_threshold.definition}")
+    print(f"  Positive ratio: {positive_ratio}")
+    
+    return kde_threshold
+
+
 
