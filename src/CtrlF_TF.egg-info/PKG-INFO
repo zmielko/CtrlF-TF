@@ -1,4 +1,4 @@
-Metadata-Version: 2.1
+Metadata-Version: 2.4
 Name: CtrlF_TF
 Version: 1.0b6
 Summary: Protein-DNA binding site caller from kmer data
@@ -19,6 +19,7 @@ Requires-Dist: scipy
 Requires-Dist: pyahocorasick
 Requires-Dist: networkx
 Requires-Dist: pybktree
+Dynamic: license-file
 
 # CtrlF-TF
 

@@ -522,7 +522,21 @@ def distance_adjusted_threshold(parameter_dataframe: pd.DataFrame,
     the minimum distance is selected as the threshold.
     """
     best_id = parameter_dataframe["pAUROC"].idxmax()
-    tpr_fpr_df = tpr_fpr_dictionary[best_id]
+    
+    # Handle SELEX k-mer naming convention (k10_9 instead of 9) while preserving PBM workflow
+    if best_id in tpr_fpr_dictionary:
+        tpr_fpr_df = tpr_fpr_dictionary[best_id]
+    else:
+        # Check for SELEX format: k{length}_{id}
+        kmer_length = parameter_dataframe.loc[best_id, "Kmer_Length"] if "Kmer_Length" in parameter_dataframe.columns else None
+        if kmer_length:
+            selex_key = f"k{kmer_length}_{best_id}"
+            if selex_key in tpr_fpr_dictionary:
+                tpr_fpr_df = tpr_fpr_dictionary[selex_key]
+            else:
+                raise KeyError(f"Neither {best_id} nor {selex_key} found in tpr_fpr_dictionary")
+        else:
+            raise KeyError(f"ID {best_id} not found in tpr_fpr_dictionary")
     scale_factor = 1 / max_fpr
     distances_from_zero_one = [math.dist((0, 1), (fpr * scale_factor, tpr)) for fpr, tpr in zip(tpr_fpr_df["FPR"], tpr_fpr_df["TPR"])]
     tpr_fpr_df["Distance"] = distances_from_zero_one
