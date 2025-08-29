@@ -75,12 +75,15 @@ class ClassifiedSequences:
                  classified_dataframe: pd.DataFrame,
                  negative_threshold: ThresholdTuple,
                  positive_threshold: ThresholdTuple,
-                 version=VERSION):
+                 version=VERSION,
+                 classification_params: dict = None):
         """Initialize the class."""
         self.dataframe: pd.DataFrame = classified_dataframe
         self.negative_threshold: ThresholdTuple = negative_threshold
         self.positive_threshold: ThresholdTuple = positive_threshold
         self.version: str = version
+        # Store all classification parameters to avoid redundancy in optimize function
+        self.classification_params: dict = classification_params or {}
 
     @classmethod
     def classify_from_dataframe(cls,
@@ -171,7 +174,19 @@ class ClassifiedSequences:
         group_counts = df['Group'].value_counts()
         print(f"Classification results: {group_counts.to_dict()}")
         print(f"PBM classification completed: {len(df)} sequences ready for optimization")
-        return cls(df, negative, positive)
+        
+        # Store classification parameters
+        classification_params = {
+            'data_type': 'pbm',
+            'method': method,
+            'z_negative': z_negative,
+            'z_positive': z_positive,
+            'sequence_start': sequence_start,
+            'sequence_end': sequence_end,
+            'ln_transform': ln_transform,
+            'kde_positive_ratio': kde_positive_ratio
+        }
+        return cls(df, negative, positive, classification_params=classification_params)
 
     @classmethod
     def classify_selex_from_dataframe(cls,
@@ -222,7 +237,15 @@ class ClassifiedSequences:
         })
         
         print(f"SELEX classification completed: {len(df)} sequences ready for optimization")
-        return cls(df, negative_thresh, positive_thresh)
+        
+        # Store classification parameters
+        classification_params = {
+            'data_type': 'selex',
+            'buffer_zone': buffer_zone,
+            'sample_size': sample_size,
+            'sample_method': sample_method
+        }
+        return cls(df, negative_thresh, positive_thresh, classification_params=classification_params)
 
     @classmethod
     def load_from_file(cls, file_path: str):
@@ -239,8 +262,10 @@ class ClassifiedSequences:
         meta_data_string, dataframe_string = file_object.read().split("Dataframe:\n")
         file_object.close()
         meta_data = meta_data_string.split("\n")
+        
         # Parse version
         version = meta_data[1].split(": ")[1]
+        
         # Parse threshold information
         negative_definition = meta_data[2].split(": ")[1]
         negative_threshold = float(meta_data[3].split(": ")[1])
@@ -248,18 +273,45 @@ class ClassifiedSequences:
         positive_threshold = float(meta_data[5].split(": ")[1])
         negative_tuple = ThresholdTuple(negative_definition, negative_threshold)
         positive_tuple = ThresholdTuple(positive_definition, positive_threshold)
+        
+        # Parse classification parameters (if present)
+        classification_params = {}
+        for line in meta_data:
+            if line.startswith('#') and ':' in line and not line.startswith('#Classified') and not line.startswith('#Version') and not line.startswith('#Negative') and not line.startswith('#Positive') and not line.startswith('#Dataframe'):
+                try:
+                    key = line.split('#')[1].split(':')[0].strip()
+                    value_str = line.split(':', 1)[1].strip()
+                    # Try to convert to appropriate type
+                    if value_str.lower() in ['true', 'false']:
+                        value = value_str.lower() == 'true'
+                    elif value_str.replace('.', '').replace('-', '').isdigit():
+                        value = float(value_str) if '.' in value_str else int(value_str)
+                    else:
+                        value = value_str
+                    classification_params[key] = value
+                except:
+                    continue  # Skip lines that can't be parsed
+        
         # Parse dataframe
         dataframe = pd.read_csv(StringIO(dataframe_string), sep='\t')
-        return cls(dataframe, negative_tuple, positive_tuple, version)
+        return cls(dataframe, negative_tuple, positive_tuple, version, classification_params)
 
     def _save(self, output_obj):
-        headers = ("#Classified Sequences\n",
+        headers = ["#Classified Sequences\n",
                    f"#Version: {self.version}\n",
                    f"#Negative Definition: {self.negative_threshold.definition}\n",
                    f"#Negative Threshold: {self.negative_threshold.value}\n",
                    f"#Positive Definition: {self.positive_threshold.definition}\n",
-                   f"#Positive Threshold: {self.positive_threshold.value}\n",
-                   "#Dataframe:\n")
+                   f"#Positive Threshold: {self.positive_threshold.value}\n"]
+        
+        # Add classification parameters to avoid redundancy in optimize
+        if self.classification_params:
+            headers.append("#Classification Parameters:\n")
+            for key, value in self.classification_params.items():
+                headers.append(f"#{key}: {value}\n")
+        
+        headers.append("#Dataframe:\n")
+        
         for header in headers:
             output_obj.write(header)
         # Save dataframe
@@ -431,52 +483,43 @@ class Optimize:
         
         return instance
 
-    def save_to_file(self, file_path: str):
-        """Save optimized parameter information to a text file.
+    def save_to_file(self, file_path: str, input_files: dict = None):
+        """Save optimized parameter information to a text file using unified format.
 
-        The saved file contains the attributes of the Optimize object,
-        including:
-        1) Inital AlignParameter
-        2) Input Classified deBruijn DataFrame
-        3) DataFrame of all benchmarked parameters up to the optimal one
-        4) DataFrame of all TPR and FPR results
-
-        The save file generated from this method can be used by the
-        load_from_file method to create a new Optimize object.
+        Uses the unified optimization format that works with both PBM and SELEX workflows
+        and is compatible with the align function's parsing logic.
 
         :param file_path: File path to save the attribute information
+        :param input_files: Dictionary of input file paths (optional, for better documentation)
         """
-        with open(file_path, 'w') as file_obj:
-            file_obj.write(f"#FPR threshold: {self.fpr_threshold}\n")
-            
-            # Add SELEX preprocessing metadata if present
-            if hasattr(self, 'selex_metadata') and self.selex_metadata:
-                file_obj.write(f"#SELEX scoring method: {self.selex_metadata.get('scoring_method', 'N/A')}\n")
-                file_obj.write(f"#SELEX buffer zone: {self.selex_metadata.get('buffer_zone', 'N/A')}\n")
-                file_obj.write(f"#SELEX sample size: {self.selex_metadata.get('sample_size', 'N/A')}\n")
-                file_obj.write(f"#SELEX sample method: {self.selex_metadata.get('sample_method', 'N/A')}\n")
-            
-            file_obj.write("#Initial Parameters:\n")
-        self.init_parameters.save_parameters(file_path, mode='a')
-        with open(file_path, 'a') as file_obj:
-            file_obj.write("#Parameter DataFrame:\n")
-        self.parameter_dataframe.to_csv(file_path,
-                                        sep='\t',
-                                        index=False,
-                                        mode='a')
-        with open(file_path, 'a') as file_obj:
-            file_obj.write("#Classified_Dataframe:\n")
-        self.classified_df.to_csv(file_path,
-                                  sep='\t',
-                                  index=False,
-                                  mode='a')
-        with open(file_path, 'a') as file_obj:
-            file_obj.write("#TPR_FPR_Dataframe:\n")
-        tpr_fpr_dataframe = ctrlf_tf.optimize_utils.meta_tpr_fpr_dataframe(self.tpr_fpr_dictionary)
-        tpr_fpr_dataframe.to_csv(file_path,
-                                 sep='\t',
-                                 index=False,
-                                 mode='a')
+        # Import here to avoid circular imports
+        import ctrlf_tf.cli_prgm
+        
+        # Determine data type from metadata or classification params
+        data_type = 'PBM'  # Default
+        if hasattr(self, 'selex_metadata') and self.selex_metadata:
+            data_type = 'SELEX'
+        elif (hasattr(self, 'classified_df') and 
+              hasattr(self.classified_df, 'classification_params') and
+              self.classified_df.classification_params.get('data_type') == 'selex'):
+            data_type = 'SELEX'
+        
+        # Prepare input files dictionary
+        if input_files is None:
+            input_files = {}
+            if hasattr(self, 'init_parameters'):
+                params = self.init_parameters
+                input_files['PWM File'] = getattr(params, 'pwm_file', 'N/A')
+                input_files['K-mer File'] = getattr(params, 'kmer_file', 'N/A')
+                input_files['Classified File'] = 'N/A'  # This would be set by calling function
+        
+        # Call unified save function
+        ctrlf_tf.cli_prgm._save_unified_optimization(
+            output_file=file_path,
+            opt_obj=self,
+            data_type=data_type,
+            input_files=input_files
+        )
 
     def distance_based_optimal_threshold(self):
         return ctrlf_tf.optimize_utils.distance_adjusted_threshold(self.parameter_dataframe,

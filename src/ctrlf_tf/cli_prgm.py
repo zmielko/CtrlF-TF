@@ -166,15 +166,6 @@ def _config_optimize_parser(parser):
                             choices=["median", "average"],
                             default="average",
                             help="K-mer scoring method (default: average)")
-    selex_group.add_argument("--sample_size",
-                            type=int,
-                            default=100000,
-                            help="Sample size for optimization (default: 100000)")
-    selex_group.add_argument("--sample_method",
-                            type=str,
-                            choices=["balanced", "random"],
-                            default="balanced",
-                            help="Sampling method (default: balanced)")
     selex_group.add_argument("--kmer_threshold",
                             type=float,
                             default=0.0,
@@ -370,26 +361,218 @@ def _align_parser_validation(parser, args) -> bool:
         parser.error("-r must be specified with either -r or -rc, not both.")
     return True
 
+def _parse_unified_optimization_file(file_path: str):
+    """Parse unified optimization file to detect data type and extract key information.
+    
+    :param file_path: Path to optimization file
+    :returns: Tuple of (data_type, optimization_info dict)
+    """
+    optimization_info = {
+        'input_files': {},
+        'best_kmer_file': None,
+        'performance_summary': {},
+        'optimal_parameters': {},
+        'optimization_parameters': {},
+        'parameter_dataframe': None,
+        'best_parameter_row': None
+    }
+    
+    data_type = 'PBM'  # Default fallback
+    
+    with open(file_path, 'r') as f:
+        for line in f:
+            line = line.strip()
+            
+            # Detect data type from unified header
+            if line.startswith('#Data Type:'):
+                data_type = line.split(':', 1)[1].strip()
+            
+            # Extract input files
+            elif line.startswith('#PWM File:'):
+                optimization_info['input_files']['PWM File'] = line.split(':', 1)[1].strip()
+            elif line.startswith('#K-mer File:'):
+                optimization_info['input_files']['K-mer File'] = line.split(':', 1)[1].strip()
+            elif line.startswith('#Sequence Data:'):
+                optimization_info['input_files']['Sequence Data'] = line.split(':', 1)[1].strip()
+            elif line.startswith('#Classified File:'):
+                optimization_info['input_files']['Classified File'] = line.split(':', 1)[1].strip()
+                
+            # Extract best k-mer file for SELEX
+            elif line.startswith('#Best K-mer File:'):
+                optimization_info['best_kmer_file'] = line.split(':', 1)[1].strip()
+                
+            # Extract performance info
+            elif line.startswith('#Best pAUROC:'):
+                optimization_info['performance_summary']['best_pauroc'] = float(line.split(':', 1)[1].strip())
+            elif line.startswith('#Best K-mer Length:'):
+                # Extract k-mer length for SELEX
+                parts = line.split(':', 1)[1].strip().split()
+                if parts:
+                    optimization_info['performance_summary']['best_kmer_length'] = int(parts[0])
+                    
+            # Extract optimal parameters from Performance Summary
+            elif line.startswith('#Optimal Core Start:'):
+                optimization_info['performance_summary']['optimal_core_start'] = int(line.split(':', 1)[1].strip())
+            elif line.startswith('#Optimal Core End:'):
+                optimization_info['performance_summary']['optimal_core_end'] = int(line.split(':', 1)[1].strip())
+            elif line.startswith('#Optimal Gap Limit:'):
+                optimization_info['performance_summary']['optimal_gap_limit'] = int(line.split(':', 1)[1].strip())
+            elif line.startswith('#Optimal Threshold:'):
+                optimization_info['performance_summary']['optimal_threshold'] = float(line.split(':', 1)[1].strip())
+                
+            # Extract optimization parameters
+            elif line.startswith('#Range Consensus:'):
+                optimization_info['optimization_parameters']['range_consensus'] = line.split(':', 1)[1].strip()
+            elif line.startswith('#Palindrome:'):
+                optimization_info['optimization_parameters']['palindrome'] = line.split(':', 1)[1].strip().lower() == 'true'
+            elif line.startswith('#PWM Reverse Complement:'):
+                optimization_info['optimization_parameters']['pwm_reverse_complement'] = line.split(':', 1)[1].strip().lower() == 'true'
+                
+            # Extract initial parameters (from original parameters section)
+            elif line.startswith('#pwm_file_format:'):
+                optimization_info['optimal_parameters']['pwm_file_format'] = line.split(':', 1)[1].strip()
+            elif line.startswith('#core_start:'):
+                optimization_info['optimal_parameters']['core_start'] = int(line.split(':', 1)[1].strip())
+            elif line.startswith('#core_end:'):
+                optimization_info['optimal_parameters']['core_end'] = int(line.split(':', 1)[1].strip())
+            elif line.startswith('#core_gaps:'):
+                # Parse list format: [] or [1, 2, 3]
+                gaps_str = line.split(':', 1)[1].strip()
+                if gaps_str == '[]':
+                    optimization_info['optimal_parameters']['core_gaps'] = []
+                else:
+                    # Simple parsing - could be enhanced if needed
+                    optimization_info['optimal_parameters']['core_gaps'] = []
+            elif line.startswith('#gap_limit:'):
+                optimization_info['optimal_parameters']['gap_limit'] = int(line.split(':', 1)[1].strip())
+            elif line.startswith('#threshold:'):
+                threshold_str = line.split(':', 1)[1].strip()
+                if threshold_str != 'None':
+                    optimization_info['optimal_parameters']['threshold'] = float(threshold_str)
+                else:
+                    optimization_info['optimal_parameters']['threshold'] = None
+            elif line.startswith('#threshold_column:'):
+                threshold_col = line.split(':', 1)[1].strip()
+                optimization_info['optimal_parameters']['threshold_column'] = threshold_col if threshold_col != 'None' else None
+            elif line.startswith('#palindrome:'):
+                optimization_info['optimal_parameters']['palindrome'] = line.split(':', 1)[1].strip().lower() == 'true'
+            elif line.startswith('#pwm_reverse_complement:'):
+                optimization_info['optimal_parameters']['pwm_reverse_complement'] = line.split(':', 1)[1].strip().lower() == 'true'
+    
+    # Parse Parameter DataFrame to find best pAUROC row
+    _parse_parameter_dataframe(file_path, optimization_info)
+    
+    return data_type, optimization_info
+
+def _parse_parameter_dataframe(file_path: str, optimization_info: dict):
+    """Parse Parameter DataFrame section and find the best pAUROC row."""
+    import pandas as pd
+    from io import StringIO
+    
+    with open(file_path, 'r') as f:
+        content = f.read()
+    
+    # Find Parameter DataFrame section
+    if '#Parameter DataFrame:' not in content:
+        return
+    
+    # Extract Parameter DataFrame section
+    param_start = content.find('#Parameter DataFrame:')
+    param_content = content[param_start:]
+    
+    # Find the end of Parameter DataFrame (next section starting with #)
+    lines = param_content.split('\n')
+    param_lines = [lines[1]]  # Header line (skip #Parameter DataFrame:)
+    
+    for line in lines[2:]:  # Data lines
+        if line.strip().startswith('#') or line.strip() == '':
+            break
+        param_lines.append(line)
+    
+    if len(param_lines) < 2:  # Need at least header + one data row
+        return
+    
+    # Parse as DataFrame
+    param_df_str = '\n'.join(param_lines)
+    try:
+        param_df = pd.read_csv(StringIO(param_df_str), sep='\t')
+        optimization_info['parameter_dataframe'] = param_df
+        
+        # Find row with best pAUROC
+        if 'pAUROC' in param_df.columns and not param_df.empty:
+            best_idx = param_df['pAUROC'].idxmax()
+            best_row = param_df.loc[best_idx]
+            optimization_info['best_parameter_row'] = best_row.to_dict()
+            
+            print(f"Found best pAUROC row: ID={best_row.get('ID', 'N/A')}, "
+                  f"pAUROC={best_row.get('pAUROC', 'N/A'):.6f}, "
+                  f"Core={best_row.get('Core_Start', 'N/A')}-{best_row.get('Core_End', 'N/A')}")
+                  
+    except Exception as e:
+        print(f"Warning: Could not parse Parameter DataFrame: {e}")
+        return
+
 def _init_alignparameters_from_args(args):
     if args.optimize_input:
-        opt_obj = cftf.Optimize.load_from_file(args.optimize_input)
-        parameters = opt_obj.optimal_parameters
-        parameters.pwm_file = args.align_model
+        # Parse unified optimization format to detect data type and extract information
+        data_type, optimization_info = _parse_unified_optimization_file(args.optimize_input)
+        print(f"Detected optimization format: {data_type}")
+        
+        # Extract optimal parameters from unified format instead of loading old format
+        optimal_params = optimization_info.get('optimal_parameters', {})
+        performance_summary = optimization_info.get('performance_summary', {})
+        
+        # Priority: Use optimal parameters from best Parameter DataFrame row
+        best_row = optimization_info.get('best_parameter_row')
+        range_consensus = optimization_info.get('optimization_parameters', {}).get('range_consensus')
+        
+        if best_row and 'Core_Start' in best_row and 'Core_End' in best_row:
+            # Use optimal core positions from best pAUROC row in Parameter DataFrame
+            core_start = int(best_row['Core_Start'])
+            core_end = int(best_row['Core_End'])
+            # Use the optimal threshold from the same row
+            optimal_threshold = best_row.get('Score_Threshold')
+            range_consensus = None  # Override range consensus with explicit optimal positions
+            print(f"Using optimal core positions from best pAUROC row: {core_start}-{core_end}")
+            if optimal_threshold is not None:
+                print(f"Using optimal threshold from best row: {optimal_threshold}")
+        elif range_consensus and range_consensus != 'None':
+            # Fallback to range consensus if no Parameter DataFrame available
+            core_start = 0
+            core_end = 0
+            optimal_threshold = performance_summary.get('optimal_threshold')
+            print(f"Using range consensus '{range_consensus}' to auto-determine core positions")
+        else:
+            # Last fallback to explicit performance summary positions
+            core_start = performance_summary.get('optimal_core_start', optimal_params.get('core_start', 0))
+            core_end = performance_summary.get('optimal_core_end', optimal_params.get('core_end', 0))
+            optimal_threshold = performance_summary.get('optimal_threshold', optimal_params.get('threshold'))
+            range_consensus = None
+            print(f"Using fallback core positions: {core_start}-{core_end}")
+        
+        # Create AlignParameters from unified format data
+        parameters = cftf.AlignParameters(
+            pwm_file=args.align_model,
+            pwm_file_format=optimal_params.get('pwm_file_format', 'Tabular'),
+            core_start=core_start,
+            core_end=core_end,
+            core_gaps=optimal_params.get('core_gaps', []),
+            range_consensus=range_consensus,
+            gap_limit=performance_summary.get('optimal_gap_limit', optimal_params.get('gap_limit', 0)),
+            threshold=optimal_threshold,
+            threshold_column=optimal_params.get('threshold_column'),
+            palindrome=optimal_params.get('palindrome', False),
+            pwm_reverse_complement=optimal_params.get('pwm_reverse_complement', True)
+        )
+        print(f"Constructed AlignParameters from unified format (core: {parameters.core_start}-{parameters.core_end})")
         
         # Handle k-mer file selection automatically for both PBM and SELEX
         if args.kmer_file:
             # User provided k-mer file - use it (manual override)
             parameters.kmer_file = args.kmer_file
         else:
-            # Auto-detect k-mer file from optimization output
-            best_kmer_file = None
-            
-            # Parse optimization file for best k-mer file path
-            with open(args.optimize_input, 'r') as f:
-                for line in f:
-                    if line.startswith('#Best K-mer File:'):
-                        best_kmer_file = line.split(': ', 1)[1].strip()
-                        break
+            # Auto-detect k-mer file from unified optimization output
+            best_kmer_file = optimization_info.get('best_kmer_file')
             
             if best_kmer_file:
                 import os
@@ -399,27 +582,25 @@ def _init_alignparameters_from_args(args):
                 else:
                     raise FileNotFoundError(f"K-mer file specified in optimization not found: {best_kmer_file}")
             else:
-                # Fallback for older optimization files without best k-mer file path
-                if hasattr(parameters, 'optimal_kmer_length') and hasattr(opt_obj, 'selex_metadata'):
-                    # SELEX fallback - auto-generate path
+                # Use k-mer file from input files section
+                input_kmer_file = optimization_info.get('input_files', {}).get('K-mer File')
+                if input_kmer_file and input_kmer_file != 'N/A':
                     import os
-                    optimization_dir = os.path.dirname(args.optimize_input)
-                    base_name = os.path.splitext(os.path.basename(args.optimize_input))[0]
-                    optimal_kmer_file = os.path.join(optimization_dir, f"{base_name}_kmers_k{parameters.optimal_kmer_length}.txt")
-                    
-                    if os.path.exists(optimal_kmer_file):
-                        parameters.kmer_file = optimal_kmer_file
-                        print(f"Auto-selected optimal k-mer file: {optimal_kmer_file} (k={parameters.optimal_kmer_length})")
+                    if os.path.exists(input_kmer_file):
+                        parameters.kmer_file = input_kmer_file
+                        print(f"Using k-mer file from input files: {input_kmer_file}")
                     else:
-                        raise FileNotFoundError(f"Expected k-mer file not found: {optimal_kmer_file}. "
-                                              f"Please provide k-mer file with --kmer_file (-k)")
+                        raise FileNotFoundError(f"K-mer file from input files not found: {input_kmer_file}")
                 else:
-                    # PBM or unrecognized format - require manual specification
                     raise ValueError("--kmer_file (-k) is required when k-mer file cannot be auto-detected from optimization output")
             
         # Apply other parameter overrides
         if args.opt_threshold_type == "Distance":
-            parameters.threshold = opt_obj.distance_based_optimal_threshold()
+            # We already applied the optimal threshold above, just confirm
+            if parameters.threshold is not None:
+                print(f"Applied distance-based optimal threshold: {parameters.threshold}")
+            else:
+                print("Warning: Distance threshold requested but not available in optimization results")
         if args.threshold:
             parameters.threshold = args.threshold
         if args.threshold_column:
@@ -446,108 +627,145 @@ def _compile_program(args):
     compiled_kmers.save_compiled_sites(args.output)
 
 
-def _save_combined_selex_optimization(output_file: str, all_opt_objs: dict, 
-                                      performance_summary: list, best_opt_obj):
-    """Save combined SELEX optimization results for all k-mer lengths.
+def _save_unified_optimization(output_file: str, opt_obj, data_type: str, 
+                              input_files: dict = None, selex_data: dict = None):
+    """Save unified optimization results for both PBM and SELEX workflows.
     
-    Creates a comprehensive optimization output that includes:
-    1. Performance summary for all k-mer lengths tested
-    2. Detailed parameter dataframes for all k-mer lengths
-    3. Best optimization result marked clearly
+    Creates a comprehensive optimization output with clear data type identification
+    that works with both PBM and SELEX workflows, and is compatible with align function.
     
     :param output_file: Output file path
-    :param all_opt_objs: Dictionary mapping k_length -> optimization object
-    :param performance_summary: List of performance dictionaries for each k-length
-    :param best_opt_obj: Best performing optimization object
+    :param opt_obj: Optimization object (single for PBM, best for SELEX)
+    :param data_type: 'PBM' or 'SELEX'
+    :param input_files: Dictionary of input file paths
+    :param selex_data: Dictionary of SELEX-specific data (performance_summary, all_opt_objs, etc.)
     """
     import pandas as pd
+    import os
     
     with open(output_file, 'w') as file_obj:
-        # Write header and metadata from best optimization
-        file_obj.write(f"#FPR threshold: {best_opt_obj.fpr_threshold}\n")
-        
-        # Add SELEX preprocessing metadata if present
-        if hasattr(best_opt_obj, 'selex_metadata') and best_opt_obj.selex_metadata:
-            file_obj.write(f"#SELEX scoring method: {best_opt_obj.selex_metadata.get('scoring_method', 'N/A')}\n")
-            file_obj.write(f"#SELEX buffer zone: {best_opt_obj.selex_metadata.get('buffer_zone', 'N/A')}\n")
-            file_obj.write(f"#SELEX sample size: {best_opt_obj.selex_metadata.get('sample_size', 'N/A')}\n")
-            file_obj.write(f"#SELEX sample method: {best_opt_obj.selex_metadata.get('sample_method', 'N/A')}\n")
-        
-        # Write K-mer Performance Summary
-        file_obj.write("#K-mer Length Performance Summary:\n")
-        summary_df = pd.DataFrame(performance_summary)
-        summary_df.to_csv(file_obj, sep='\t', index=False)
+        # Unified header structure
+        file_obj.write("#CtrlF-TF Optimization Results\n")
+        file_obj.write(f"#Version: {opt_obj.version}\n")
+        file_obj.write(f"#Data Type: {data_type}\n")
         file_obj.write("\n")
         
-        # Write best k-mer length info
-        best_entry = max(performance_summary, key=lambda x: x['performance'])
-        file_obj.write(f"#Best K-mer Length: {best_entry['k_length']} "
-                      f"({best_entry['metric_name']} = {best_entry['performance']:.6f})\n")
-        file_obj.write(f"#Best K-mer File: {best_entry['kmer_file']}\n")
+        # Input files section
+        file_obj.write("#Input Files:\n")
+        if input_files:
+            for key, path in input_files.items():
+                # Convert to absolute path
+                abs_path = os.path.abspath(path) if path else 'N/A'
+                file_obj.write(f"#{key}: {abs_path}\n")
+        file_obj.write("\n")
         
-        # Write initial parameters from best optimization
-        file_obj.write("#Initial Parameters:\n")
+        # Optimization parameters section
+        file_obj.write("#Optimization Parameters:\n")
+        file_obj.write(f"#FPR Threshold: {opt_obj.fpr_threshold}\n")
         
-    # Save best optimization parameters (reuse existing method)
-    best_opt_obj.init_parameters.save_parameters(output_file, mode='a')
+        # Extract range consensus and other parameters from init_parameters
+        if hasattr(opt_obj, 'init_parameters'):
+            params = opt_obj.init_parameters
+            if hasattr(params, 'range_consensus') and params.range_consensus:
+                file_obj.write(f"#Range Consensus: {params.range_consensus}\n")
+            file_obj.write(f"#Palindrome: {getattr(params, 'palindrome', False)}\n")
+            file_obj.write(f"#PWM Reverse Complement: {getattr(params, 'pwm_reverse_comp', True)}\n")
+        
+        # Add workflow-specific parameters from classification
+        if hasattr(opt_obj, 'classified_df') and hasattr(opt_obj.classified_df, 'classification_params'):
+            params = opt_obj.classified_df.classification_params
+            if params.get('data_type') == 'pbm':
+                file_obj.write(f"#Classification Method: {params.get('method', 'N/A')}\n")
+                file_obj.write(f"#Z Negative: {params.get('z_negative', 'N/A')}\n")
+                file_obj.write(f"#Z Positive: {params.get('z_positive', 'N/A')}\n")
+                file_obj.write(f"#KDE Positive Ratio: {params.get('kde_positive_ratio', 'N/A')}\n")
+            elif params.get('data_type') == 'selex':
+                file_obj.write(f"#Buffer Zone: {params.get('buffer_zone', 'N/A')}\n")
+                file_obj.write(f"#Sample Size: {params.get('sample_size', 'N/A')}\n")
+                file_obj.write(f"#Sample Method: {params.get('sample_method', 'N/A')}\n")
+        
+        # SELEX-specific sections
+        if data_type == 'SELEX' and selex_data:
+            # K-mer performance summary for SELEX
+            performance_summary = selex_data.get('performance_summary', [])
+            if performance_summary:
+                file_obj.write("#K-mer Length Performance Summary:\n")
+                summary_df = pd.DataFrame(performance_summary)
+                summary_df.to_csv(file_obj, sep='\t', index=False)
+                file_obj.write("\n")
+                
+                # Best k-mer length info
+                best_entry = max(performance_summary, key=lambda x: x['performance'])
+                file_obj.write(f"#Best K-mer Length: {best_entry['k_length']} "
+                              f"({best_entry['metric_name']} = {best_entry['performance']:.6f})\n")
+                file_obj.write(f"#Best K-mer File: {os.path.abspath(best_entry['kmer_file'])}\n")
+                file_obj.write("\n")
+        
+        # Performance summary for optimal parameters
+        file_obj.write("#Performance Summary:\n")
+        if hasattr(opt_obj, 'parameter_dataframe') and not opt_obj.parameter_dataframe.empty:
+            best_row = opt_obj.parameter_dataframe.loc[opt_obj.parameter_dataframe['pAUROC'].idxmax()]
+            file_obj.write(f"#Best pAUROC: {best_row['pAUROC']:.6f}\n")
+            file_obj.write(f"#Optimal Core Start: {best_row['Core_Start']}\n")
+            file_obj.write(f"#Optimal Core End: {best_row['Core_End']}\n")
+            file_obj.write(f"#Optimal Gap Limit: {best_row['Kmer_Gap_Limit']}\n")
+            file_obj.write(f"#Optimal Threshold: {best_row['Score_Threshold']}\n")
+        file_obj.write("\n")
+        
+    # Save initial parameters (for align compatibility)
+    opt_obj.init_parameters.save_parameters(output_file, mode='a')
     
-    # Add standard Parameter DataFrame section for align compatibility
+    # Save standard sections for align compatibility
     with open(output_file, 'a') as file_obj:
         file_obj.write("#Parameter DataFrame:\n")
+    if hasattr(opt_obj, 'parameter_dataframe') and not opt_obj.parameter_dataframe.empty:
+        opt_obj.parameter_dataframe.to_csv(output_file, sep='\t', index=False, mode='a')
     
-    # Save best k-mer parameter dataframe in standard format
-    if hasattr(best_opt_obj, 'parameter_dataframe') and not best_opt_obj.parameter_dataframe.empty:
-        best_opt_obj.parameter_dataframe.to_csv(output_file, sep='\t', index=False, mode='a')
-    
-    # Add classified dataframe section for align compatibility
     with open(output_file, 'a') as file_obj:
         file_obj.write("#Classified_Dataframe:\n")
+    if hasattr(opt_obj, 'classified_df') and not opt_obj.classified_df.empty:
+        opt_obj.classified_df.to_csv(output_file, sep='\t', index=False, mode='a')
     
-    # Save best k-mer classified dataframe
-    if hasattr(best_opt_obj, 'classified_df') and not best_opt_obj.classified_df.empty:
-        best_opt_obj.classified_df.to_csv(output_file, sep='\t', index=False, mode='a')
-    
-    # Add TPR/FPR dataframe section for align compatibility  
     with open(output_file, 'a') as file_obj:
         file_obj.write("#TPR_FPR_Dataframe:\n")
-    
-    # Save best k-mer TPR/FPR data in standard format
-    if hasattr(best_opt_obj, 'tpr_fpr_dictionary') and best_opt_obj.tpr_fpr_dictionary:
-        for key, dataframe in best_opt_obj.tpr_fpr_dictionary.items():
-            dataframe.to_csv(output_file, sep='\t', index=False, header=True, mode='a')
+    # Debug TPR_FPR dictionary status
+    has_attr = hasattr(opt_obj, 'tpr_fpr_dictionary')
+    has_data = has_attr and opt_obj.tpr_fpr_dictionary is not None
+    data_size = len(opt_obj.tpr_fpr_dictionary) if has_data else 0
     
     with open(output_file, 'a') as file_obj:
-        file_obj.write("#Combined Parameter DataFrame (All K-mer Lengths):\n")
+        file_obj.write(f"# TPR_FPR Debug: has_attr={has_attr}, has_data={has_data}, data_size={data_size}\n")
     
-    # Combine all parameter dataframes with k-length identification
-    combined_dfs = []
-    for k_length in sorted(all_opt_objs.keys()):
-        opt_obj = all_opt_objs[k_length]
-        if hasattr(opt_obj, 'parameter_dataframe') and not opt_obj.parameter_dataframe.empty:
-            df_copy = opt_obj.parameter_dataframe.copy()
-            # Ensure Kmer_Length column exists and is set correctly
-            df_copy['Kmer_Length'] = k_length
-            # Add prefix to ID to distinguish between k-lengths
-            df_copy['ID'] = df_copy['ID'].apply(lambda x: f"k{k_length}_{x}")
-            combined_dfs.append(df_copy)
+    if has_attr and opt_obj.tpr_fpr_dictionary:
+        # Use the same format as original optimize_core.py
+        import ctrlf_tf.optimize_utils
+        tpr_fpr_dataframe = ctrlf_tf.optimize_utils.meta_tpr_fpr_dataframe(opt_obj.tpr_fpr_dictionary)
+        tpr_fpr_dataframe.to_csv(output_file, sep='\t', index=False, mode='a')
+    else:
+        # TPR_FPR dictionary is missing or empty - this should not happen in a proper optimization
+        with open(output_file, 'a') as file_obj:
+            file_obj.write("# TPR_FPR data not available - optimization object missing performance data\n")
     
-    if combined_dfs:
-        combined_df = pd.concat(combined_dfs, ignore_index=True)
-        combined_df.to_csv(output_file, sep='\t', index=False, mode='a')
-    
-    # Add TPR/FPR data for all k-lengths
-    with open(output_file, 'a') as file_obj:
-        file_obj.write("#TPR FPR DataFrame (All K-mer Lengths):\n")
-        
-        for k_length in sorted(all_opt_objs.keys()):
-            opt_obj = all_opt_objs[k_length]
-            if hasattr(opt_obj, 'tpr_fpr_dictionary') and opt_obj.tpr_fpr_dictionary:
-                file_obj.write(f"#K-mer Length {k_length} TPR/FPR Data:\n")
-                for key, dataframe in opt_obj.tpr_fpr_dictionary.items():
-                    df_copy = dataframe.copy()
-                    # Prefix ID to distinguish k-lengths
-                    df_copy['ID'] = f"k{k_length}_{key}"
-                    df_copy.to_csv(file_obj, sep='\t', index=False, header=True)
+    # SELEX-specific combined data sections
+    if data_type == 'SELEX' and selex_data:
+        all_opt_objs = selex_data.get('all_opt_objs', {})
+        if all_opt_objs:
+            with open(output_file, 'a') as file_obj:
+                file_obj.write("#Combined Parameter DataFrame (All K-mer Lengths):\n")
+            
+            # Combine all parameter dataframes with k-length identification
+            combined_dfs = []
+            for k_length in sorted(all_opt_objs.keys()):
+                k_opt_obj = all_opt_objs[k_length]
+                if hasattr(k_opt_obj, 'parameter_dataframe') and not k_opt_obj.parameter_dataframe.empty:
+                    df_copy = k_opt_obj.parameter_dataframe.copy()
+                    df_copy['Kmer_Length'] = k_length
+                    df_copy['ID'] = df_copy['ID'].apply(lambda x: f"k{k_length}_{x}")
+                    combined_dfs.append(df_copy)
+            
+            if combined_dfs:
+                combined_df = pd.concat(combined_dfs, ignore_index=True)
+                combined_df.to_csv(output_file, sep='\t', index=False, mode='a')
 
 
 def _optimize_program(args):
@@ -663,23 +881,20 @@ def _optimize_program(args):
             parameters.threshold = effective_threshold
             parameters.threshold_column = args.kmer_threshold_column
             
-            # Sample classified sequences for faster optimization (parameter testing only)
-            if len(classified_seqs.dataframe) > args.sample_size:
-                print(f"Sampling {args.sample_size} sequences from {len(classified_seqs.dataframe)} for parameter optimization...")
-                sampled_classified_df = classified_seqs.dataframe.sample(n=args.sample_size, random_state=42)
-            else:
-                print(f"Using all {len(classified_seqs.dataframe)} sequences for parameter optimization...")
-                sampled_classified_df = classified_seqs.dataframe
+            # Use classified sequences directly (already pre-sampled during classify step)
+            print(f"Using {len(classified_seqs.dataframe)} pre-sampled sequences for parameter optimization...")
+            sampled_classified_df = classified_seqs.dataframe
             
             # Run optimization for this k-length (SELEX ungapped, so simplified gap_thresholds)
             gap_thresholds = {0: effective_threshold}  # Single threshold for gap=0 only
             
-            # Create SELEX metadata for this optimization
+            # Create SELEX metadata using parameters from classified file and current args
+            classification_params = classified_seqs.classification_params
             selex_metadata = {
                 'scoring_method': args.scoring_method,
-                'buffer_zone': args.buffer_zone,
-                'sample_size': args.sample_size,
-                'sample_method': args.sample_method,
+                'buffer_zone': classification_params.get('buffer_zone', 'N/A'),
+                'sample_size': classification_params.get('sample_size', 'N/A'),
+                'sample_method': classification_params.get('sample_method', 'N/A'),
                 'use_kde_threshold': args.use_kde_threshold,
                 'kde_positive_ratio': args.kde_positive_ratio if args.use_kde_threshold else None,
                 'effective_threshold': effective_threshold
@@ -697,18 +912,18 @@ def _optimize_program(args):
             try:
                 # Get the performance metric that was used for optimization
                 if hasattr(opt_obj, 'parameter_dataframe') and not opt_obj.parameter_dataframe.empty:
-                    # Use the same metric that determines optimal_parameters
+                    # Use the BEST performance metric (not the last one) for k-mer length comparison
                     if 'pAUROC' in opt_obj.parameter_dataframe.columns:
-                        performance = opt_obj.parameter_dataframe.iloc[-1]['pAUROC']
+                        performance = opt_obj.parameter_dataframe['pAUROC'].max()
                         metric_name = "pAUROC"
                     elif 'AUROC' in opt_obj.parameter_dataframe.columns:
-                        performance = opt_obj.parameter_dataframe.iloc[-1]['AUROC']
+                        performance = opt_obj.parameter_dataframe['AUROC'].max()
                         metric_name = "AUROC"
                     else:
-                        # Fallback to first numeric column
+                        # Fallback to first numeric column (use max for best performance)
                         numeric_cols = opt_obj.parameter_dataframe.select_dtypes(include=[float, int]).columns
                         if len(numeric_cols) > 0:
-                            performance = opt_obj.parameter_dataframe.iloc[-1][numeric_cols[0]]
+                            performance = opt_obj.parameter_dataframe[numeric_cols[0]].max()
                             metric_name = numeric_cols[0]
                         else:
                             performance = 0.0
@@ -765,9 +980,28 @@ def _optimize_program(args):
                 if kept_files:
                     print(f"Kept optimal k-mer file: {', '.join(kept_files)}")
             
-            # Save combined optimization results for all k-mer lengths
-            _save_combined_selex_optimization(args.output, all_opt_objs, kmer_performance_summary, best_opt_obj)
-            print(f"Saved SELEX optimization results (all k-lengths) to: {args.output}")
+            # Prepare input files and SELEX data for unified save
+            input_files = {
+                'PWM File': args.align_model,
+                'Sequence Data': args.input_file,
+                'K-mer File': best_kmer_file,
+                'Classified File': args.classify_file
+            }
+            
+            selex_data = {
+                'performance_summary': kmer_performance_summary,
+                'all_opt_objs': all_opt_objs
+            }
+            
+            # Save using unified optimization format
+            _save_unified_optimization(
+                output_file=args.output,
+                opt_obj=best_opt_obj,
+                data_type='SELEX',
+                input_files=input_files,
+                selex_data=selex_data
+            )
+            print(f"Saved SELEX optimization results (unified format) to: {args.output}")
         
         # Continue with standard workflow (don't exit early) - SELEX now follows PBM pattern
         # The saved optimization file can be used by align function with --optimize_input
@@ -786,16 +1020,41 @@ def _optimize_program(args):
                             classified_df=classified_seqs.dataframe,
                             fpr_threshold=args.fpr_threshold,
                             gap_thresholds=gap_thresholds)
-    opt_obj.save_to_file(args.output)
+    
+    # Prepare input files for PBM unified format
+    pbm_input_files = {
+        'PWM File': args.align_model,
+        'K-mer File': args.kmer_file,
+        'Classified File': args.classify_file
+    }
+    
+    opt_obj.save_to_file(args.output, input_files=pbm_input_files)
 
 
 def _call_program(args):
-    # Determine if to init CtrlF from k-mers or solutions
+    # Determine file type and initialize CtrlF appropriately
     with open(args.input_model) as read_obj:
         lines = read_obj.readlines()
-        if lines[1].startswith("#Palindrome"):
+        
+        # Check if it's an optimization file (unified format)
+        if len(lines) > 2 and lines[0].startswith("#CtrlF-TF Optimization Results"):
+            raise ValueError(f"Input file appears to be an optimization file. "
+                           f"For callsites, use either: "
+                           f"1) Alignment file (from 'ctrlf align'), or "
+                           f"2) Compiled sites file (from 'ctrlf compile')")
+        
+        # Check for alignment file format (has #Palindrome header)
+        is_alignment_file = False
+        for line in lines[:10]:  # Check first 10 lines to be safe
+            if line.startswith("#Palindrome"):
+                is_alignment_file = True
+                break
+        
+        # Initialize CtrlF object based on file type
+        if is_alignment_file:
             ctrlf_object = cftf.CtrlF.from_alignment_file(args.input_model)
         else:
+            # Assume it's a compiled sites file
             ctrlf_object = cftf.CtrlF.from_compiled_sites(args.input_model)
     if args.output:
         output = args.output

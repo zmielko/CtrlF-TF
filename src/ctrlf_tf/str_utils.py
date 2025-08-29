@@ -133,6 +133,9 @@ def read_kmer_data(kmer_file: str,
     """
     kmer_df = pd.read_csv(kmer_file, sep='\t')
     if threshold is not None:
+        # Use third column (index 2) as default threshold column if not specified
+        if threshold_column is None:
+            threshold_column = kmer_df.columns[2]
         if threshold_column not in kmer_df.columns:
             raise ValueError(("Threshold column not found in"
                              f"{kmer_df.columns}"))
